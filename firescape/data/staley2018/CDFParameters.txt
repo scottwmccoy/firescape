@@ -1,0 +1,283 @@
+EVT_Code,N,Weibull_Lambda_Scale,Weibull_Kappa_Shape,Weibull_R2,Weibull_RMSE,CLASSNAME
+3001,338796,0.632514,8.408742,0.98966,0.045006,Inter-Mountain Basins Sparsely Vegetated Systems
+3002,67965,0.632444,9.325526,0.978858,0.061656,Mediterranean California Sparsely Vegetated Systems
+3003,10499,0.653431,6.778563,0.955863,0.080305,North Pacific Sparsely Vegetated Systems
+3004,96310,0.583668,11.017459,0.973048,0.074252,North American Warm Desert Sparsely Vegetated Systems
+3006,219834,0.643514,7.642705,0.986422,0.050585,Rocky Mountain Alpine/Montane Sparsely Vegetated Systems
+3007,18364,0.582511,10.815818,0.962322,0.082776,Western Great Plains Sparsely Vegetated Systems
+3008,32054,0.706348,8.195769,0.991707,0.036027,North Pacific Oak Woodland
+3009,46,0.707891,7.000488,0.981653,0.040115,Northwestern Great Plains Aspen Forest and Parkland
+3011,1277585,0.69898,6.955144,0.99276,0.035878,Rocky Mountain Aspen Forest and Woodland
+3012,91564,0.722278,6.886242,0.990806,0.038587,Rocky Mountain Bigtooth Maple Ravine Woodland
+3014,1335617,0.773143,7.918473,0.997317,0.020404,Central and Southern California Mixed Evergreen Woodland
+3015,201656,0.647936,8.099978,0.984417,0.053263,California Coastal Redwood Forest
+3016,2150058,0.668548,7.90239,0.994173,0.033557,Colorado Plateau Pinyon-Juniper Woodland
+3017,507394,0.638473,8.835191,0.989828,0.045369,Columbia Plateau Western Juniper Woodland and Savanna
+3018,372550,0.728296,5.920661,0.978889,0.057252,East Cascades Mesic Montane Mixed-Conifer Forest and Woodland
+3019,3164098,0.668816,9.481709,0.996047,0.027702,Great Basin Pinyon-Juniper Woodland
+3020,16597,0.671331,7.593489,0.972186,0.061739,Inter-Mountain Basins Subalpine Limber-Bristlecone Pine Woodland
+3021,43415,0.763766,7.924175,0.987909,0.040295,Klamath-Siskiyou Lower Montane Serpentine Mixed Conifer Woodland
+3022,189174,0.77438,7.449429,0.987207,0.043812,Klamath-Siskiyou Upper Montane Serpentine Mixed Conifer Woodland
+3023,917317,0.663961,8.075642,0.986097,0.05219,Madrean Encinal
+3024,1108549,0.692509,7.267266,0.991267,0.040031,Madrean Lower Montane Pine-Oak Forest and Woodland
+3025,1845334,0.663195,7.387946,0.989714,0.044679,Madrean Pinyon-Juniper Woodland
+3026,17515,0.687602,7.752852,0.988235,0.040483,Madrean Upper Montane Conifer-Oak Forest and Woodland
+3027,2389414,0.736717,6.493999,0.985254,0.048526,Mediterranean California Dry-Mesic Mixed Conifer Forest and Woodland
+3028,2695374,0.731633,5.979007,0.976466,0.061385,Mediterranean California Mesic Mixed Conifer Forest and Woodland
+3029,1040233,0.733078,7.114673,0.989772,0.040963,Mediterranean California Mixed Oak Woodland
+3030,274251,0.730038,6.852595,0.9861,0.046484,Mediterranean California Lower Montane Conifer Forest and Woodland
+3031,874105,0.719615,7.028215,0.987066,0.047097,California Montane Jeffrey Pine(-Ponderosa Pine) Woodland
+3032,640001,0.684612,6.265625,0.972166,0.069687,Mediterranean California Red Fir Forest
+3033,10828,0.662587,7.677532,0.961157,0.071448,Mediterranean California Subalpine Woodland
+3034,78319,0.67718,8.071193,0.986842,0.046581,Mediterranean California Mesic Serpentine Woodland and Chaparral
+3035,28710,0.738176,6.078228,0.966727,0.063645,North Pacific Dry Douglas-fir(-Madrone) Forest and Woodland
+3036,4858,0.687317,14.380871,0.994595,0.027329,North Pacific Hypermaritime Seasonal Sitka Spruce Forest
+3037,331647,0.747749,5.959131,0.973384,0.061457,North Pacific Maritime Dry-Mesic Douglas-fir-Western Hemlock Forest
+3038,10454,0.774811,5.055087,0.926904,0.081234,North Pacific Maritime Mesic Subalpine Parkland
+3039,16141,0.707391,6.776358,0.973235,0.055848,North Pacific Maritime Mesic-Wet Douglas-fir-Western Hemlock Forest
+3041,162150,0.790366,6.48035,0.989214,0.037535,North Pacific Mountain Hemlock Forest
+3042,44219,0.773405,6.037758,0.98216,0.047194,North Pacific Mesic Western Hemlock-Silver Fir Forest
+3043,1848922,0.76385,6.30255,0.984565,0.046938,Mediterranean California Mixed Evergreen Forest
+3044,47727,0.71536,6.499392,0.97321,0.062769,Northern California Mesic Subalpine Woodland
+3045,3333273,0.743299,5.74584,0.984383,0.048404,Northern Rocky Mountain Dry-Mesic Montane Mixed Conifer Forest
+3046,1722094,0.779638,6.118671,0.99199,0.032184,Northern Rocky Mountain Subalpine Woodland and Parkland
+3047,263709,0.7192,5.697763,0.97147,0.067814,Northern Rocky Mountain Mesic Montane Mixed Conifer Forest
+3048,1246,0.819185,6.503533,0.946006,0.066203,Northwestern Great Plains Highland White Spruce Woodland
+3049,139558,0.673394,6.847845,0.994052,0.032276,Rocky Mountain Foothill Limber Pine-Juniper Woodland
+3050,1586425,0.800137,6.22125,0.99116,0.032422,Rocky Mountain Lodgepole Pine Forest
+3051,1500806,0.701717,6.770211,0.990595,0.040768,Southern Rocky Mountain Dry-Mesic Montane Mixed Conifer Forest and Woodland
+3052,1092757,0.729264,6.451631,0.993791,0.03149,Southern Rocky Mountain Mesic Montane Mixed Conifer Forest and Woodland
+3053,1672541,0.684154,6.759456,0.985495,0.052019,Northern Rocky Mountain Ponderosa Pine Woodland and Savanna
+3054,5312115,0.652131,7.095453,0.98837,0.047432,Southern Rocky Mountain Ponderosa Pine Woodland
+3055,2244470,0.79814,6.264928,0.993521,0.027855,Rocky Mountain Subalpine Dry-Mesic Spruce-Fir Forest and Woodland
+3056,2709801,0.79814,5.937163,0.988351,0.037029,Rocky Mountain Subalpine Mesic-Wet Spruce-Fir Forest and Woodland
+3057,19341,0.690934,7.25091,0.985174,0.04419,Rocky Mountain Subalpine-Montane Limber-Bristlecone Pine Woodland
+3058,26075,0.690592,6.133402,0.975569,0.061518,Sierra Nevada Subalpine Lodgepole Pine Forest and Woodland
+3059,289780,0.631867,8.617233,0.982424,0.05927,Southern Rocky Mountain Pinyon-Juniper Woodland
+3060,24923,0.616876,9.332206,0.992537,0.034526,East Cascades Ponderosa Pine Forest and Woodland
+3061,906811,0.71006,6.566425,0.99265,0.035397,Inter-Mountain Basins Aspen-Mixed Conifer Forest and Woodland
+3062,505690,0.706436,6.925668,0.989346,0.043437,Inter-Mountain Basins Curl-leaf Mountain Mahogany Woodland
+3063,4483,0.669763,8.055613,0.987232,0.039918,North Pacific Broadleaf Landslide Forest and Shrubland
+3064,44903,0.636309,9.294118,0.981141,0.05788,Colorado Plateau Mixed Low Sagebrush Shrubland
+3065,162151,0.633478,9.620666,0.981924,0.059117,Columbia Plateau Scabland Shrubland
+3066,2945,0.558978,14.025179,0.889202,0.110002,Inter-Mountain Basins Mat Saltbush Shrubland
+3068,181527,0.841242,9.105216,0.99862,0.013372,North Pacific Dry and Mesic Alpine Dwarf-Shrubland or Fell-field or Meadow
+3070,3861,0.647833,6.925736,0.972686,0.060507,Rocky Mountain Alpine Dwarf-Shrubland
+3071,1716,0.637973,9.624375,0.963567,0.061952,Sierra Nevada Alpine Dwarf-Shrubland
+3072,10637,0.608876,9.554256,0.970263,0.071264,Wyoming Basins Dwarf Sagebrush Shrubland and Steppe
+3074,83905,0.595276,12.689444,0.978466,0.059836,Chihuahuan Creosotebush Desert Scrub
+3075,60372,0.603175,13.493303,0.991476,0.039601,Chihuahuan Mixed Salt Desert Scrub
+3076,29619,0.568508,19.890487,0.96674,0.074808,Chihuahuan Stabilized Coppice Dune and Sand Flat Scrub
+3077,15284,0.601173,10.759144,0.945164,0.079358,Chihuahuan Succulent Desert Scrub
+3078,6392,0.593225,22.948819,0.986773,0.044193,Colorado Plateau Blackbrush-Mormon-tea Shrubland
+3079,1792092,0.636734,11.344964,0.994771,0.032767,Great Basin Xeric Mixed Sagebrush Shrubland
+3080,8733295,0.624601,10.803938,0.994576,0.034056,Inter-Mountain Basins Big Sagebrush Shrubland
+3081,1045001,0.599614,12.082208,0.991201,0.042756,Inter-Mountain Basins Mixed Salt Desert Scrub
+3082,3152915,0.601524,11.185928,0.987829,0.050825,Mojave Mid-Elevation Mixed Desert Scrub
+3083,21603,0.726307,7.633421,0.990937,0.036635,North Pacific Avalanche Chute Shrubland
+3084,12597,0.67981,6.273912,0.985648,0.044925,North Pacific Montane Shrubland
+3085,58009,0.640443,5.517478,0.99702,0.020911,Northwestern Great Plains Shrubland
+3086,91797,0.665588,6.146409,0.970177,0.07221,Rocky Mountain Lower Montane-Foothill Shrubland
+3087,349611,0.588298,12.600827,0.986031,0.050289,Sonora-Mojave Creosotebush-White Bursage Desert Scrub
+3088,12311,0.667174,11.21568,0.996113,0.023444,Sonora-Mojave Mixed Salt Desert Scrub
+3090,30,0.550409,17.774182,0.732251,0.154165,Sonoran Granite Outcrop Desert Scrub
+3091,63262,0.598849,16.470602,0.984683,0.05284,Sonoran Mid-Elevation Desert Scrub
+3092,942014,0.650441,7.643113,0.994722,0.031507,Southern California Coastal Scrub
+3093,6293,0.611408,9.942192,0.952984,0.081085,Southern Colorado Plateau Sand Shrubland
+3094,34208,0.571949,16.430422,0.963307,0.075415,Western Great Plains Sandhill Shrubland
+3095,485174,0.58827,12.43588,0.983652,0.05806,Apacherian-Chihuahuan Mesquite Upland Scrub
+3096,3774,0.699011,8.150509,0.963449,0.06241,California Maritime Chaparral
+3097,2027981,0.705764,7.955055,0.996657,0.024426,California Mesic Chaparral
+3098,997820,0.802425,7.453416,0.99728,0.019046,California Montane Woodland and Chaparral
+3099,37126,0.673957,7.352289,0.991473,0.037351,California Xeric Serpentine Chaparral
+3100,230653,0.593441,13.122897,0.981575,0.059141,Chihuahuan Mixed Desert and Thornscrub
+3101,66521,0.61365,13.993376,0.992674,0.036448,Madrean Oriental Chaparral
+3103,10324,0.661156,8.506929,0.974646,0.055479,Great Basin Semi-Desert Chaparral
+3104,846163,0.640868,8.657786,0.992048,0.039261,Mogollon Chaparral
+3105,412500,0.691721,7.821115,0.991225,0.039871,Northern and Central California Dry-Mesic Chaparral
+3106,217981,0.686529,6.343075,0.993448,0.033587,Northern Rocky Mountain Montane-Foothill Deciduous Shrubland
+3107,95312,0.678304,7.090649,0.989242,0.043661,Rocky Mountain Gambel Oak-Mixed Montane Shrubland
+3108,438321,0.688427,9.177896,0.99339,0.034239,Sonora-Mojave Semi-Desert Chaparral
+3109,741273,0.579543,12.059941,0.985166,0.054938,Sonoran Paloverde-Mixed Cacti Desert Scrub
+3110,1808265,0.678648,7.917302,0.993887,0.033825,Southern California Dry-Mesic Chaparral
+3111,15422,0.566117,16.049973,0.944486,0.087662,Western Great Plains Mesquite Woodland
+3112,5119,0.642429,6.224311,0.993063,0.027763,California Central Valley Mixed Oak Savanna
+3113,76303,0.712126,8.100275,0.987423,0.04667,California Coastal Live Oak Woodland and Savanna
+3114,694291,0.687451,8.058462,0.990126,0.042902,California Lower Montane Foothill Pine Woodland and Savanna
+3115,55803,0.656496,10.11986,0.995595,0.026957,Inter-Mountain Basins Juniper Savanna
+3116,53816,0.596608,11.456971,0.984968,0.053148,Madrean Juniper Savanna
+3117,374206,0.636522,8.217602,0.989586,0.044726,Southern Rocky Mountain Ponderosa Pine Savanna
+3118,709652,0.751503,7.066463,0.995044,0.027944,Southern California Oak Woodland and Savanna
+3119,54130,0.599672,15.591541,0.993639,0.034026,Southern Rocky Mountain Juniper Woodland and Savanna
+3121,566813,0.583664,10.978747,0.98404,0.057904,Apacherian-Chihuahuan Semi-Desert Shrubland
+3122,2665,0.578103,24.549737,0.987651,0.042675,Chihuahuan Gypsophilous Grassland and Steppe
+3123,3769401,0.632791,8.410206,0.986341,0.053401,Columbia Plateau Steppe and Grassland
+3124,892750,0.622892,10.638791,0.990546,0.044421,Columbia Plateau Low Sagebrush Steppe
+3125,6211387,0.634029,10.297422,0.994121,0.035158,Inter-Mountain Basins Big Sagebrush Steppe
+3126,1263461,0.658222,8.714561,0.993856,0.034954,Inter-Mountain Basins Montane Sagebrush Steppe
+3127,613181,0.626424,10.224508,0.990866,0.043378,Inter-Mountain Basins Semi-Desert Shrub-Steppe
+3128,2812,0.652786,7.184285,0.985278,0.042527,Northern California Coastal Scrub
+3129,751463,0.685063,7.893296,0.994347,0.032585,California Central Valley and Southern Coastal Grassland
+3130,7718,0.661845,8.48207,0.991776,0.03411,California Mesic Serpentine Grassland
+3131,192000,0.817102,11.776172,0.99515,0.02717,California Northern Coastal Grassland
+3132,104611,0.603831,17.601837,0.995987,0.025442,Central Mixedgrass Prairie Grassland
+3133,553,0.576926,15.629403,0.969304,0.05575,Chihuahuan Sandy Plains Semi-Desert Grassland
+3134,150490,0.655752,8.886499,0.988621,0.0457,Columbia Basin Foothill and Canyon Dry Grassland
+3135,1077033,0.675245,6.822644,0.988065,0.047112,Inter-Mountain Basins Semi-Desert Grassland
+3137,2189,0.745613,8.612923,0.991588,0.030457,Mediterranean California Subalpine Meadow
+3138,1183095,0.824653,7.567721,0.996468,0.020643,North Pacific Montane Grassland
+3139,3115866,0.728486,6.162368,0.991654,0.035901,Northern Rocky Mountain Lower Montane-Foothill-Valley Grassland
+3140,842504,0.82779,7.284992,0.998807,0.011571,Northern Rocky Mountain Subalpine-Upper Montane Grassland
+3141,3747047,0.664584,6.960683,0.990135,0.04308,Northwestern Great Plains Mixedgrass Prairie
+3142,411942,0.646487,9.428351,0.988591,0.047665,Columbia Basin Palouse Prairie
+3143,137,0.588245,6.638936,0.963033,0.057473,Rocky Mountain Alpine Fell-Field
+3144,8635,0.642137,6.340822,0.973773,0.063448,Rocky Mountain Alpine Turf
+3145,1509334,0.734127,5.982246,0.988696,0.041404,Rocky Mountain Subalpine-Montane Mesic Meadow
+3146,855217,0.752462,5.519663,0.992002,0.032471,Southern Rocky Mountain Montane-Subalpine Grassland
+3147,50354,0.617524,9.916105,0.973647,0.066311,Western Great Plains Foothill and Piedmont Grassland
+3148,615017,0.636359,9.430412,0.992204,0.039181,Western Great Plains Sand Prairie Grassland
+3149,1813729,0.589646,10.752298,0.977393,0.070548,Western Great Plains Shortgrass Prairie
+3151,2261,0.66973,9.111936,0.961438,0.066597,California Central Valley Riparian Forest and Woodland
+3152,276460,0.70898,6.509724,0.983902,0.051572,California Montane Riparian Systems
+3153,284605,0.615485,8.874968,0.982487,0.059522,Inter-Mountain Basins Greasewood Flat
+3154,375652,0.66248,8.380697,0.988518,0.04797,Inter-Mountain Basins Montane Riparian Forest and Woodland
+3155,466189,0.631836,7.849353,0.975744,0.068138,North American Warm Desert Riparian Forest and Woodland
+3156,6076,0.682704,6.613065,0.978298,0.05535,North Pacific Lowland Riparian Forest and Shrubland
+3157,20906,0.713232,6.113748,0.959284,0.071748,North Pacific Swamp Systems
+3158,32923,0.724286,5.854808,0.979846,0.05409,North Pacific Montane Riparian Woodland and Shrubland
+3159,525598,0.676857,6.137937,0.983317,0.054851,Rocky Mountain Montane Riparian Forest and Woodland
+3160,111071,0.667077,6.159486,0.987474,0.046296,Rocky Mountain Subalpine/Upper Montane Riparian Forest and Woodland
+3161,70254,0.735789,5.897436,0.986618,0.044822,Northern Rocky Mountain Conifer Swamp
+3162,190095,0.678106,7.055993,0.994047,0.032881,Western Great Plains Floodplain Forest and Woodland
+3163,218,0.629798,10.246064,0.964269,0.057769,Pacific Coastal Marsh Systems
+3164,6147,0.634853,5.686743,0.989987,0.036186,Rocky Mountain Wetland-Herbaceous
+3165,20411,0.681354,7.854475,0.989143,0.041413,Northern Rocky Mountain Foothill Conifer Wooded Steppe
+3166,434286,0.745417,5.894642,0.98425,0.048985,Middle Rocky Mountain Montane Douglas-fir Forest and Woodland
+3167,54318,0.764379,6.047857,0.986696,0.042681,Rocky Mountain Poor-Site Lodgepole Pine Forest
+3168,330,0.696558,7.543604,0.945787,0.070042,Northern Rocky Mountain Avalanche Chute Shrubland
+3169,201974,0.679781,7.236514,0.990576,0.041902,Northern Rocky Mountain Subalpine Deciduous Shrubland
+3170,180,0.65026,10.618886,0.970976,0.053054,Klamath-Siskiyou Xeromorphic Serpentine Savanna and Chaparral
+3171,97562,0.800742,6.516868,0.991432,0.032449,North Pacific Alpine and Subalpine Dry Grassland
+3172,22820,0.740856,6.941702,0.989355,0.038774,Sierran-Intermontane Desert Western White Pine-White Fir Woodland
+3173,9167,0.680733,7.345918,0.982115,0.049932,North Pacific Wooded Volcanic Flowage
+3174,233259,0.779136,5.809551,0.97944,0.051865,North Pacific Dry-Mesic Silver Fir-Western Hemlock-Douglas-fir Forest
+3177,28,0.634909,12.009026,0.964664,0.058164,California Coastal Closed-Cone Conifer Forest and Woodland
+3178,3600,0.779,6.337798,0.979922,0.044969,North Pacific Hypermaritime Western Red-cedar-Western Hemlock Forest
+3179,1097904,0.697527,7.912414,0.992839,0.036377,Northwestern Great Plains-Black Hills Ponderosa Pine Woodland and Savanna
+3180,31939,0.67067,7.222474,0.968198,0.068615,Introduced Riparian Forest and Woodland
+3181,12612252,0.617426,10.341983,0.99413,0.035206,Introduced Upland Vegetation-Annual Grassland
+3182,1487873,0.663225,6.862074,0.98545,0.05301,Introduced Upland Vegetation-Perennial Grassland and Forbland
+3183,674650,0.629574,9.840602,0.992438,0.039033,Introduced Upland Vegetation-Annual and Biennial Forbland
+3184,1182595,0.672324,7.436881,0.996537,0.02522,California Annual Grassland
+3186,1022,0.672786,9.07408,0.928236,0.087041,Introduced Upland Vegetation-Shrub
+3195,2692,0.597086,5.908623,0.988661,0.035541,Recently Burned-Herb and Grass Cover
+3198,9539,0.659714,7.620065,0.98284,0.051941,NLCD-Herbaceous Wetlands
+3200,6908,0.665303,6.915078,0.971976,0.061151,Coastal Douglas-fir Woodland
+3201,12533,0.676913,7.083305,0.973604,0.061566,Quercus garryana Woodland Alliance
+3202,5888,0.61695,6.088512,0.989222,0.034918,Juniperus occidentalis Wooded Herbaceous Alliance
+3203,21055,0.636701,7.641017,0.965052,0.071598,Juniperus occidentalis Woodland Alliance
+3204,13605,0.570802,25.348731,0.985366,0.045572,Western Great Plains Mesquite Shrubland
+3206,959,0.708617,6.608195,0.93992,0.074055,Pseudotsuga menziesii Giant Forest Alliance
+3208,89797,0.722634,6.773067,0.987478,0.04383,Abies concolor Forest Alliance
+3210,664345,0.616672,13.730605,0.992533,0.037781,Coleogyne ramosissima Shrubland Alliance
+3211,3311,0.614655,13.210264,0.973546,0.060118,Grayia spinosa Shrubland Alliance
+3212,77735,0.573217,16.457179,0.964058,0.06948,Western Great Plains Sandhill Grassland
+3213,24368,0.567633,16.116451,0.925803,0.101749,Quercus havardii Shrubland Alliance
+3214,10087,0.65778,9.574225,0.983919,0.046388,Arctostaphylos patula Shrubland Alliance
+3215,567086,0.646093,8.807856,0.99272,0.037604,Quercus turbinella Shrubland Alliance
+3216,32592,0.695516,8.344719,0.986553,0.047817,Cercocarpus montanus Shrubland Alliance
+3217,241464,0.695618,6.471208,0.986702,0.047855,Quercus gambelii Shrubland Alliance
+3218,54587,0.606417,8.273922,0.967222,0.078276,North American Warm Desert Sparsely Vegetated Systems II
+3219,42636,0.621206,12.521193,0.987458,0.045114,Inter-Mountain Basins Sparsely Vegetated Systems II
+3220,2086094,0.660725,9.476563,0.995631,0.029526,Artemisia tridentata ssp. vaseyana Shrubland Alliance
+3221,32765,0.635607,7.104801,0.98842,0.043203,Mediterranean California Sparsely Vegetated Systems II
+3222,4493,0.659727,9.266706,0.984032,0.044669,Rocky Mountain Alpine/Montane Sparsely Vegetated Systems II
+3227,4050491,0.753627,5.995462,0.988343,0.040709,Dry-mesic Montane Douglas-fir Forest
+3228,7725,0.732049,5.583948,0.960218,0.067907,Dry-mesic Montane Western Larch Forest
+3230,34863,0.70309,8.7159,0.992413,0.034778,Pinus sabiniana Woodland Alliance
+3231,188,0.716932,5.136423,0.833847,0.118305,Sequoiadendron giganteum Forest Alliance
+3232,75475,0.72652,5.783838,0.971896,0.062384,Abies grandis Forest Forest
+3233,246462,0.700166,6.080787,0.980076,0.057839,Subalpine Douglas-fir Forest
+3234,54079,0.691195,6.12919,0.978524,0.059043,Mesic Montane Douglas-fir Forest
+3235,345463,0.71877,6.103695,0.986842,0.046519,Xeric Montane Douglas-fir Forest
+3236,93,0.666756,6.089024,0.880646,0.102893,Subalpine Western Larch Forest
+3237,13,0.601816,10.005522,0.734595,0.155879,Mesic Montane Western Larch Forest
+3250,2046,0.609986,8.940577,0.86831,0.121962,Inter-Mountain Basins Curl-leaf Mountain Mahogany Shrubland
+3251,9121,0.647731,7.131933,0.947431,0.082804,Rocky Mountain Montane Riparian Shrubland
+3252,15513,0.692043,7.645254,0.993163,0.03131,Rocky Mountain Subalpine/Upper Montane Riparian Shrubland
+3253,806,0.705749,8.199177,0.98567,0.037295,Western Great Plains Floodplain Shrubland
+3254,1304,0.742317,6.129229,0.98857,0.033321,Western Great Plains Floodplain Herbaceous
+3255,10622,0.664176,8.48668,0.964132,0.076551,Inter-Mountain Basins Montane Riparian Shrubland
+3256,774948,0.615357,9.088341,0.976269,0.069973,Apacherian-Chihuahuan Semi-Desert Grassland
+3258,16419,0.704509,7.063811,0.964717,0.060409,North American Warm Desert Riparian Herbaceous
+3259,4510,0.739606,10.534496,0.995722,0.022283,Introduced Riparian Shrubland
+3260,1686,0.72415,9.594017,0.996467,0.019125,Mediterranean California Lower Montane Black Oak Forest and Woodland
+3261,1984,0.702588,6.960286,0.959278,0.062056,Mediterranean California Lower Montane Black Oak - Conifer Forest and Woodland
+3262,44,0.622804,14.867572,0.969645,0.055046,East Cascades Oak Forest and Woodland
+3263,21,0.631422,9.880709,0.784049,0.145144,East Cascades Oak - Ponderosa Pine Forest and Woodland
+3264,6431,0.657018,9.0444,0.97471,0.057609,California Lower Montane Blue Oak Forest and Woodland
+3265,9746,0.692772,9.006765,0.988009,0.039537,California Lower Montane Blue Oak-Foothill Pine Forest and Woodland
+3266,148,0.748238,6.186673,0.965607,0.054549,Oregon White Oak Woodland
+3267,299,0.705997,5.861149,0.926842,0.078436,Douglas-fir - Oregon White Oak Woodland
+3292,40031,0.606672,5.211508,0.991732,0.037666,Open Water
+3293,520,0.574769,6.370316,0.972979,0.051674,Snow-Ice
+3294,165991,0.592199,9.022155,0.974096,0.073191,Barren
+3295,1029,0.60247,8.099818,0.890361,0.109523,Quarries-Strip Mines-Gravel Pits
+3296,22886,0.680414,5.715173,0.960114,0.076269,Developed-Low Intensity
+3297,4686,0.670753,5.861445,0.930859,0.088497,Developed-Medium Intensity
+3298,824,0.666361,6.630944,0.939399,0.075018,Developed-High Intensity
+3299,131117,0.650966,7.50623,0.984022,0.054637,Developed-Roads
+3385,9321,0.59303,7.403039,0.987775,0.043095,Western Great Plains Wooded Draw and Ravine
+3495,2291,0.707325,7.451296,0.981815,0.040701,Western Great Plains Depressional Wetland Systems
+3503,100564,0.58706,13.54606,0.994918,0.030142,Chihuahuan Loamy Plains Desert Grassland
+3504,2184,0.60995,13.412417,0.989398,0.035252,Chihuahuan-Sonoran Desert Bottomland and Swale Grassland
+3541,4032,0.678946,7.515647,0.968817,0.060843,Developed-Upland Deciduous Forest
+3542,5288,0.672941,6.525685,0.960174,0.07107,Developed-Upland Evergreen Forest
+3543,5780,0.691686,8.166815,0.983523,0.044775,Developed-Upland Mixed Forest
+3544,5887,0.631962,9.602994,0.984985,0.046987,Developed-Upland Herbaceous
+3545,13904,0.656208,8.795045,0.990904,0.03751,Developed-Upland Shrubland
+3548,399,0.663275,7.306803,0.951717,0.066648,Developed-Herbaceous Wetland Vegetation
+3549,15757,0.670623,8.090195,0.987787,0.043519,Developed-Woody Wetland Vegetation
+3900,3411,0.646809,7.694555,0.977574,0.053011,Western Cool Temperate Urban Deciduous Forest
+3901,8568,0.64103,6.986128,0.963264,0.071649,Western Cool Temperate Urban Evergreen Forest
+3902,2839,0.66982,7.664855,0.981167,0.045685,Western Cool Temperate Urban Mixed Forest
+3903,44340,0.674953,6.204025,0.969723,0.069957,Western Cool Temperate Urban Herbaceous
+3904,7626,0.668092,5.635228,0.941183,0.087854,Western Cool Temperate Urban Shrubland
+3910,832,0.66928,7.292334,0.950719,0.067583,Western Warm Temperate Urban Deciduous Forest
+3911,1790,0.674569,6.593017,0.955912,0.064668,Western Warm Temperate Urban Evergreen Forest
+3912,1954,0.673789,8.783193,0.981065,0.044408,Western Warm Temperate Urban Mixed Forest
+3913,12823,0.661555,7.192363,0.964473,0.068806,Western Warm Temperate Urban Herbaceous
+3914,7277,0.681898,6.065877,0.934472,0.08088,Western Warm Temperate Urban Shrubland
+3920,326,0.684815,6.878709,0.978673,0.043551,Western Cool Temperate Developed Ruderal Deciduous Forest
+3921,1631,0.670814,6.855111,0.981811,0.044038,Western Cool Temperate Developed Ruderal Evergreen Forest
+3922,12,0.660731,21.023518,0.878314,0.108768,Western Cool Temperate Developed Ruderal Mixed Forest
+3923,25197,0.654663,7.551755,0.976866,0.061875,Western Cool Temperate Developed Ruderal Shrubland
+3924,112050,0.655816,7.582474,0.994315,0.032195,Western Cool Temperate Developed Ruderal Grassland
+3925,17,0.741942,7.872522,0.928106,0.084817,Western Warm Temperate Developed Ruderal Deciduous Forest
+3926,325,0.62887,9.803202,0.899607,0.097442,Western Warm Temperate Developed Ruderal Evergreen Forest
+3927,33,0.624202,12.772529,0.959066,0.061394,Western Warm Temperate Developed Ruderal Mixed Forest
+3928,7587,0.753324,7.226752,0.950951,0.064448,Western Warm Temperate Developed Ruderal Shrubland
+3929,7570,0.666659,8.935942,0.979569,0.048465,Western Warm Temperate Developed Ruderal Grassland
+3941,22,0.603988,9.728315,0.958543,0.063563,Western Cool Temperate Undeveloped Ruderal Evergreen Forest
+3943,1414,0.64485,7.30292,0.903923,0.084192,Western Cool Temperate Undeveloped Ruderal Shrubland
+3944,4706,0.710109,5.700809,0.971471,0.055549,Western Cool Temperate Undeveloped Ruderal Grassland
+3945,13,0.704511,12.803496,0.785037,0.142703,Western Warm Temperate Undeveloped Ruderal Deciduous Forest
+3948,551,0.702117,6.128476,0.916,0.084975,Western Warm Temperate Undeveloped Ruderal Shrubland
+3949,94,0.618982,15.833986,0.982358,0.039287,Western Warm Temperate Undeveloped Ruderal Grassland
+3960,7979,0.62642,5.943006,0.985033,0.046845,Western Cool Temperate Orchard
+3961,336,0.642508,6.873025,0.965162,0.056898,Western Cool Temperate Vineyard
+3962,19,0.638862,17.353013,0.930679,0.085133,Western Cool Temperate Bush fruit and berries
+3963,39,0.558564,21.666421,0.794288,0.144903,Western Cool Temperate Row Crop - Close Grown Crop
+3964,14119,0.67804,4.912529,0.973942,0.059182,Western Cool Temperate Row Crop
+3965,31018,0.623267,6.630356,0.993136,0.033454,Western Cool Temperate Close Grown Crop
+3966,64228,0.655916,8.600867,0.992169,0.03705,Western Cool Temperate Fallow/Idle Cropland
+3967,127719,0.682815,8.699487,0.992388,0.038323,Western Cool Temperate Pasture and Hayland
+3968,59180,0.68829,5.136817,0.991906,0.032102,Western Cool Temperate Wheat
+3980,2870,0.742987,8.137224,0.9962,0.019685,Western Warm Temperate Orchard
+3981,31,0.686562,12.067155,0.940503,0.072042,Western Warm Temperate Vineyard
+3983,120,0.721653,6.189174,0.897469,0.094079,Western Warm Temperate Row Crop - Close Grown Crop
+3984,2058,0.619357,10.584835,0.976351,0.054676,Western Warm Temperate Row Crop
+3985,801,0.679779,7.457021,0.995421,0.020383,Western Warm Temperate Close Grown Crop
+3986,8587,0.596504,8.931851,0.911674,0.103697,Western Warm Temperate Fallow/Idle Cropland
+3987,2202,0.721641,9.877735,0.997923,0.015026,Western Warm Temperate Pasture and Hayland
+3988,2072,0.53948,4.709144,0.875296,0.117769,Western Warm Temperate Wheat

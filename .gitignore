@@ -1,0 +1,31 @@
+# caches & scratch
+cache/
+atlas14_cache/
+nexrad_cache/
+*.sqlite
+.pytest_cache/
+__pycache__/
+*.pyc
+.coverage
+
+# build
+build/
+dist/
+*.egg-info/
+
+# heavy geodata never belongs in this repo (lives on Box / local cache)
+*.tif
+*.tiff
+*.img
+*.vrt
+*.gpkg
+*.gdb/
+*.zip
+*.asc
+
+# figures are products, not source
+*.png
+*.pdf
+
+# os
+.DS_Store

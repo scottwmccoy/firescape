@@ -1,0 +1,26 @@
+# Bootstrap calibration - CALIFORNIA-DERIVED PLACEHOLDER.
+#
+# Values are the regional calibration for the "Modoc Plateau / Basin and Range /
+# Southern Deserts" (MBD) region of Rossi et al. (2025, IJWF WF24225, Table 5):
+# the physiographically closest analog to western Nevada and their
+# best-calibrated region (fire-mean DFL RMSE 0.03). Use only until milestone M3
+# produces a Nevada calibration from pilot-area MTBS fires.
+#
+# barc_breaks = [unburned-low, low-moderate, moderate-high] dNBR(x1000)
+# thresholds. Only the middle (low-moderate) value is calibrated (272 = MBD
+# regional median); 125 and 500 are the standard USGS/pfdf severity.estimate
+# defaults. The hazard models pool moderate+high, so only the middle break
+# affects T and F; the first break is used to exclude unburned basins during
+# calibration.
+
+[meta]
+name = "default_rossi_ca"
+created = 2026-08-12
+method = "bootstrap: Rossi et al. 2025 CA MBD regional values"
+cdf_source = "doi:10.5066/P9TKYL5K"
+warning = "CA-derived placeholder; replace with Nevada calibration (milestone M3)"
+
+[regions.pilot]
+pdsim = 0.38
+barc_breaks = [125.0, 272.0, 500.0]
+fires = []

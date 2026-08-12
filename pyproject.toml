@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "firescape"
+version = "0.1.0"
+description = "Pre-fire assessment of postfire debris-flow hazard for Nevada: simulated burn severity (Rossi et al. 2025 method) driving the USGS pfdf models."
+readme = "README.md"
+license = { text = "GPL-3.0-only" }
+requires-python = ">=3.12"
+authors = [{ name = "Scott W. McCoy" }]
+keywords = ["debris flow", "wildfire", "burn severity", "hazard assessment", "Nevada", "pre-fire"]
+
+# NOTE: two required dependencies are deliberately NOT listed because pip
+# cannot resolve them from PyPI (see CLAUDE.md "Environment"):
+#   - pfdf      -> USGS registry only:
+#                  pip install pfdf -i https://code.usgs.gov/api/v4/groups/859/-/packages/pypi/simple
+#   - stormscape -> editable local install: pip install -e ~/git/code/stormscape
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "geopandas>=1.0",
+    "shapely>=2.0",
+    "rasterio>=1.3",
+    "rioxarray>=0.15",
+    "xarray>=2024.1",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[project.scripts]
+firescape = "firescape.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["firescape*"]
+
+[tool.setuptools.package-data]
+firescape = ["data/**/*.txt", "data/**/*.toml", "data/**/*.geojson", "data/**/*.md"]

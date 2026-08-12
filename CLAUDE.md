@@ -1,0 +1,74 @@
+# firescape — development notes
+
+Pre-fire PFDF hazard tool for Nevada (USGS LHP award, Task 2/Deliverable 2, due
+2027-07-31). Approved build plan: `~/.claude/plans/cozy-growing-bachman.md`
+(design companion: `cozy-growing-bachman-agent-a9036a316d8dd9f31.md`).
+
+## Environment — IMPORTANT
+
+- Run all Python with the **FireMan** conda env:
+  `/opt/anaconda3/envs/FireMan/bin/python`
+- FireMan is a conda-forge base (python 3.12) whose science stack is
+  **pip-managed** (pfdf pulled it in). Extend it with FireMan's own pip —
+  do NOT `conda install` scientific packages into it (double-manages numpy).
+- `pfdf` is NOT on PyPI. Install/upgrade only from the USGS registry:
+  `pip install pfdf -i https://code.usgs.gov/api/v4/groups/859/-/packages/pypi/simple`
+  (PyPI packages named `pfdf`/`wildcat` are unrelated third-party projects.)
+- `stormscape` is an editable local install from `~/git/code/stormscape`.
+
+## Data layout
+
+- All heavy data on Box:
+  `~/Library/CloudStorage/Box-Box/SWMresearch/PostFireDebrisFlows/PreFireAssessment/`
+  with `raw/` (immutable + `<name>.provenance.json`), `interim/` (regeneratable),
+  `products/` (versioned run dirs + `run_meta.json`), `figures/`.
+- Caches are LOCAL, never Box: `~/.cache/firescape/` (`firescape.paths`).
+  Downloads stage locally and move atomically into Box.
+- This repo holds code, tests, calibration TOMLs, region GeoJSONs, and the two
+  small Staley 2018 text files. No rasters, no zips (gitignored).
+
+## pfdf unit traps (all conversions live in hazard.py / delineate.py)
+
+| Trap | Rule |
+|---|---|
+| dNBR conventions | `severity.estimate()` wants dNBR×1000 (MTBS-style ints); `M1.variables(...dnbr...)` wants the SAME ×1000 values (divides by 1000 internally to make F) |
+| Rainfall | Staley-2017 `R` = **accumulation in mm per duration**: I15 24 mm/h → R15 = 6 mm (`pfdf.utils.intensity.to_accumulation`). Gartner-2014 takes i15 in mm/h directly |
+| Slopes | gradients (rise/run), NOT degrees — the ≥23°/≥30° cuts are applied inside pfdf |
+| pysheds NoData | pysheds silently treats missing NoData as 0 — always set explicit nodata on Rasters |
+| MTBS classes | dnbr6 is SIX classes: 1=unburned-low 2=low 3=moderate 4=high **5=increased greenness (exclude) 6=non-mapping (nodata)** — not BARC4 |
+
+## Validated endpoints (probed 2026-08-12; see firescape/mtbs.py, fires.py)
+
+- WFIGS current perimeters (5-min refresh):
+  `https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query`
+  — match names with `UPPER(attr_IncidentName) LIKE ...`; join on `attr_IrwinID`
+  (names get reused; merged fires drop records). `poly_GISAcres` for geometry
+  truth, `attr_IncidentSize` for reporting.
+- MTBS: static `mtbs_perimeter_data.zip` (all perimeters, ~390 MB, daily) at
+  `edcintl.cr.usgs.gov/downloads/sciweb1/shared/MTBS_Fire/data/composite_data/burned_area_extent_shapefile/`;
+  per-fire dNBR thresholds via GeoServer WFS layer `mtbs:burn_severity_fire_polygons`
+  (geometry is EPSG:3857 — a lon/lat BBOX() cql filter silently returns 0 rows);
+  annual severity mosaics via WCS `edcintl.cr.usgs.gov/geoserver/mtbs/wcs`,
+  coverageId `mtbs__mtbs_CONUS_<year>` (double underscore). Per-fire bundles
+  (dnbr.tif) have NO static URL — ZipServlet POST or viewer email queue.
+- NOAA Atlas 14 vol 1 grids: `hdsc.nws.noaa.gov/pub/hdsc/data/sw/sw{ARI}yr{DUR}ma[_ams].zip`
+  (1000ths of inch; 1-yr exists as PDS only). NV = `sw`; CA sliver of pilot needs `ca`.
+  Atlas 15: nothing covers NV yet (CONUS prelim ~Sept 2026, 1-h+ durations only).
+- ScienceBase 403s plain fetches — use curl/requests with a browser User-Agent.
+- BAER/SBS: NV fires are mostly BLM (ESR program, not USFS BAER) — query the
+  burn-severity portal ImageServer by IRWIN ID; fallback = derive dNBR from
+  Sentinel-2/Landsat with MTBS WFS threshold attributes.
+
+## Conventions
+
+- Mirror stormscape: AOI spec via `stormscape.aoi.load_aoi` (bbox/vector/shapely);
+  result-dict contract (`fields/transform/crs/profile/meta`); outputs named
+  `<key>_<field>.tif` + `<key>_aoi.geojson`; DEMs EPSG:5070; figures in auto-UTM;
+  lazy-import heavy deps; offline tests only (synthetic fixtures).
+- Calibration values are TOML **files** (firescape/data/calibration/), never
+  Python constants; adopted calibrations get committed. Region polygons are
+  GeoJSON keyed by `region` name; TOML sections use the same names.
+- USGS standard: I15 = 24 mm/h reference storm; basins 0.025–8 km²; filters per
+  wildcat defaults (config.py). Rossi masks: valley (focal σ(elev) ≤ 5 m in
+  200 m radius, polygons ≥ 1 km²), sink (flow-dir nulls), water (EVT open water
+  + NHD waterbodies).
