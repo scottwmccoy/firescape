@@ -74,6 +74,52 @@ class TestClassifyBarc4:
             severity.classify_barc4(np.zeros(3), (250.0, 125.0, 500.0))
 
 
+class TestRemapCrosswalk:
+    def _legend(self):
+        import pandas as pd
+
+        return pd.DataFrame({
+            "Value": [3019, 7019, 8888, 9555, 7126],
+            "EVT_NAME": [
+                "Great Basin Pinyon-Juniper Woodland",          # identity
+                "Great Basin Pinyon-Juniper Woodland",          # minus4000 (7019-4000=3019)
+                "Inter-Mountain Basins Sparsely Vegetated Systems",  # name match -> 3001
+                "Some Introduced Grassland",                    # semantic via extra
+                "Totally Novel Class",                          # unmapped
+            ],
+        })
+
+    def test_rules(self, mini_cdf):
+        from firescape.severity import remap_crosswalk
+
+        mapping, audit = remap_crosswalk(self._legend(), mini_cdf, extra={9555: 3019})
+        rules = dict(zip(audit["code"], audit["rule"]))
+        assert mapping[3019] == 3019 and rules[3019] == "identity"
+        assert mapping[7019] == 3019 and rules[7019] == "minus4000"
+        assert mapping[8888] == 3001 and rules[8888] == "name"
+        assert mapping[9555] == 3019 and rules[9555] == "semantic"
+        assert 7126 not in mapping and rules[7126] == "UNMAPPED"
+
+    def test_minus4000_guard_rejects_name_mismatch(self, mini_cdf):
+        import pandas as pd
+
+        from firescape.severity import remap_crosswalk
+
+        legend = pd.DataFrame({"Value": [7019], "EVT_NAME": ["Completely Different Thing"]})
+        mapping, audit = remap_crosswalk(legend, mini_cdf, extra={})
+        assert 7019 not in mapping
+        assert audit.iloc[0]["rule"] == "UNMAPPED"
+
+    def test_apply_crosswalk_passthrough(self):
+        import numpy as np
+
+        from firescape.severity import apply_crosswalk
+
+        evt = np.array([[7019, 1234], [7019, 9999]])
+        out = apply_crosswalk(evt, {7019: 3019})
+        assert out.tolist() == [[3019, 1234], [3019, 9999]]
+
+
 class TestCoverageReport:
     def test_fractions_and_flags(self, evt_grid, mini_cdf):
         rep = severity.coverage_report(evt_grid, mini_cdf)

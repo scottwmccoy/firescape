@@ -98,8 +98,17 @@ def run_observed(event_id: str, *, dem_path: Path | None = None,
                 dem_conditioned=terr.conditioned, filters=filters)
     segments.locate_basins()
 
-    # --- soils --------------------------------------------------------------
-    kf = match_grid(soils.kf_factor(dem), dem, resampling="nearest")
+    # --- soils (disk-cached: ScienceBase is intermittently unavailable) -----
+    kf_cache = paths.interim_dir("assess_cache", event_id.upper()) / "kf.tif"
+    if kf_cache.exists():
+        kf = Raster.from_file(kf_cache)
+    else:
+        kf = soils.kf_factor(dem)
+        try:
+            kf.save(kf_cache, overwrite=True)
+        except Exception:
+            pass
+    kf = match_grid(kf, dem, resampling="nearest")
 
     # --- models -------------------------------------------------------------
     T, F, S = hz.m1_inputs(segments, barc4, terr.slopes, dnbr, kf, omitnan=True)
@@ -152,4 +161,64 @@ def run_observed(event_id: str, *, dem_path: Path | None = None,
 
     return {"segments": segments, "props": props, "meta": meta,
             "paths": {"segments": seg_path, "basins": basin_path, "out_dir": out_dir},
-            "rasters": {"dem": dem, "barc4": barc4, "dnbr": dnbr, "kf": kf}}
+            "rasters": {"dem": dem, "barc4": barc4, "dnbr": dnbr, "kf": kf,
+                        "slopes": terr.slopes, "relief": terr.relief,
+                        "perimeter": perim}}
+
+
+def shootout(event_id: str, calibrations: dict[str, tuple[float, tuple[float, float, float]]],
+             *, evt_layer: str, lfps_email: str | None = None,
+             evt_raster=None, crosswalk: dict[int, int] | None = None,
+             i15_mmh: float = I15_REFERENCE_MMH) -> dict:
+    """M2 shootout: simulated vs observed severity on the SAME segment network.
+
+    Runs the observed chain once (delineation + filters use observed severity,
+    per Rossi), then for each named calibration (pdsim, barc_breaks) simulates
+    dNBR from the EVT layer and recomputes M1 likelihood on the same segments.
+    Returns per-basin arrays, fire-wide stats, and the EVT coverage report.
+    """
+    from pfdf.raster import Raster
+
+    from firescape import landfire, severity
+    from firescape.delineate import match_grid
+
+    obs = run_observed(event_id, i15_mmh=i15_mmh)
+    segments = obs["segments"]
+    dem = obs["rasters"]["dem"]
+    slopes = obs["rasters"]["slopes"]
+    kf = obs["rasters"]["kf"]
+    p_obs = obs["props"][f"P_{int(round(i15_mmh))}mmh"]
+
+    if evt_raster is None:
+        evt_raster = match_grid(
+            landfire.evt(dem.bounds, evt_layer, email=lfps_email), dem, resampling="nearest"
+        )
+    cdf = severity.load_cdf_table()
+    evt_values = evt_raster.values
+    if crosswalk:
+        evt_values = severity.apply_crosswalk(evt_values, crosswalk)
+    coverage = severity.coverage_report(
+        evt_values[obs["rasters"]["perimeter"].values.astype(bool)], cdf
+    )
+
+    runs = {}
+    for name, (pdsim, breaks) in calibrations.items():
+        sim_dnbr, src = severity.simulate_dnbr(evt_values, pdsim, cdf)
+        sim_barc = severity.classify_barc4(sim_dnbr, breaks)
+        dnbr_r = Raster.from_array(sim_dnbr, spatial=dem, nodata=np.nan)
+        barc_r = Raster.from_array(sim_barc, spatial=dem, nodata=0)
+        T, F, S = hz.m1_inputs(segments, barc_r, slopes, dnbr_r, kf, omitnan=True)
+        p_sim = hz.likelihood_m1(T, F, S, i15_mmh=i15_mmh)
+        ok = np.isfinite(p_obs) & np.isfinite(p_sim)
+        resid = p_sim[ok] - p_obs[ok]
+        denom = np.sum((p_obs[ok] - p_obs[ok].mean()) ** 2)
+        runs[name] = {
+            "pdsim": pdsim, "breaks": breaks, "p_sim": p_sim,
+            "sim_dnbr": sim_dnbr, "src": src,
+            "mean_obs": float(p_obs[ok].mean()), "mean_sim": float(p_sim[ok].mean()),
+            "rmse": float(np.sqrt(np.mean(resid ** 2))),
+            "nse": float(1 - np.sum(resid ** 2) / denom) if denom > 0 else float("nan"),
+            "n": int(ok.sum()),
+        }
+    return {"observed": obs, "p_obs": p_obs, "runs": runs,
+            "coverage": coverage, "evt_layer": evt_layer, "evt": evt_raster}

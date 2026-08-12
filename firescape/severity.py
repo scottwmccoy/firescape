@@ -112,6 +112,79 @@ def simulate_dnbr(
     return dnbr, src
 
 
+def _norm_name(s: str) -> str:
+    s = str(s).lower()
+    for ch in "-/()":
+        s = s.replace(ch, " ")
+    return " ".join(s.split())
+
+
+#: Curated semantic mappings for LANDFIRE-Remap classes with no legacy twin
+#: (judgment calls — review at calibration time). Values are Staley-table
+#: codes. The introduced-annual mapping (9308 -> 3181) is the cheatgrass
+#: pathway and matters most for Nevada.
+REMAP_SEMANTIC = {
+    9307: 3183,  # GB&IM Introduced Annual/Biennial Forbland -> Introduced Annual+Biennial Forbland
+    9308: 3181,  # GB&IM Introduced Annual Grassland (cheatgrass) -> Introduced Annual Grassland
+    9309: 3182,  # GB&IM Introduced Perennial Grassland -> Introduced Perennial Grassland
+    9328: 3943,  # Interior W. Temperate Ruderal Shrubland -> Undeveloped Ruderal Shrubland
+    9336: 3943,  # GB&IM Ruderal Shrubland -> Undeveloped Ruderal Shrubland
+    9503: 3255,  # GB Foothill/Lower Montane Riparian Shrubland -> IMB Montane Riparian Shrubland
+}
+
+
+def remap_crosswalk(legend: pd.DataFrame, cdf_table: pd.DataFrame | None = None,
+                    *, extra: dict[int, int] | None = None,
+                    value_col: str = "Value", name_col: str = "EVT_NAME",
+                    min_token_overlap: float = 0.34) -> tuple[dict[int, int], pd.DataFrame]:
+    """Map LANDFIRE-Remap EVT codes onto Staley-2018 (legacy) codes.
+
+    Rules, in order: (1) identity if the code is already in the CDF table;
+    (2) code-4000 (Remap kept legacy numbering +4000 for carried-over
+    classes), guarded by a token-overlap check between the two class names;
+    (3) exact normalized-name match; (4) curated ``extra`` semantic mappings
+    (defaults to REMAP_SEMANTIC). Returns (mapping, audit table). Codes
+    matching no rule are absent from the mapping (they'll hit the barren
+    fallback in simulate_dnbr, flagged SRC_FALLBACK).
+    """
+    if cdf_table is None:
+        cdf_table = load_cdf_table()
+    extra = dict(REMAP_SEMANTIC if extra is None else extra)
+    by_name = {_norm_name(r.CLASSNAME): int(c) for c, r in cdf_table.iterrows()}
+
+    rows, mapping = [], {}
+    for _, r in legend.iterrows():
+        code = int(r[value_col])
+        name = str(r[name_col])
+        rule, target = None, None
+        if code in cdf_table.index:
+            rule, target = "identity", code
+        elif (code - 4000) in cdf_table.index:
+            legacy_name = _norm_name(cdf_table.at[code - 4000, "CLASSNAME"])
+            a, b = set(_norm_name(name).split()), set(legacy_name.split())
+            overlap = len(a & b) / max(1, len(a | b))
+            if overlap >= min_token_overlap:
+                rule, target = "minus4000", code - 4000
+        if rule is None and _norm_name(name) in by_name:
+            rule, target = "name", by_name[_norm_name(name)]
+        if rule is None and code in extra:
+            rule, target = "semantic", int(extra[code])
+        if target is not None:
+            mapping[code] = int(target)
+        rows.append({"code": code, "name": name, "rule": rule or "UNMAPPED",
+                     "target": target})
+    return mapping, pd.DataFrame(rows)
+
+
+def apply_crosswalk(evt: np.ndarray, mapping: dict[int, int]) -> np.ndarray:
+    """Translate an EVT-code array through a crosswalk (unmapped codes pass
+    through unchanged, to be caught by the fallback in simulate_dnbr)."""
+    evt = np.asarray(evt)
+    codes, inverse = np.unique(evt, return_inverse=True)
+    translated = np.array([mapping.get(int(c), int(c)) for c in codes])
+    return translated[inverse].reshape(evt.shape)
+
+
 def classify_barc4(dnbr: np.ndarray, breaks: tuple[float, float, float]) -> np.ndarray:
     """Classify dNBR(x1000) into BARC4 classes (1=unburned/very low ... 4=high).
 
