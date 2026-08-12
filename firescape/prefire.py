@@ -122,7 +122,20 @@ def run_unit(unit_geom, cfg: PreFireConfig, *, unit_key: str, crs=None) -> dict:
     domain = Raster.from_array(~masks["exclude"] & in_unit, spatial=dem, isbool=True)
     segments, _terr2 = network(dem, domain, min_area_km2=cfg.filters.min_area_km2,
                                max_length_m=cfg.filters.max_length_m)
-    n0 = segments.size
+    n0 = 0 if segments is None else segments.size
+
+    def _empty(note: str) -> dict:
+        return {"unit_key": unit_key, "segments": segments, "n_segments": 0, "props": {},
+                "meta": {"unit_key": unit_key, "note": note,
+                         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                         "segments_delineated": int(n0), "segments_kept": 0,
+                         "mask_fraction": {k: float(v.mean()) for k, v in masks.items()},
+                         "dem_shape": list(dem.shape)}}
+
+    # Units that are almost entirely lake, playa, or valley floor (the Rossi
+    # masks can exclude >95% of such a unit) legitimately yield no segments.
+    if n0 == 0:
+        return _empty("no segments delineated (unit fully masked or below min area)")
 
     area = np.asarray(segments.area(units="kilometers"), dtype=float)
     keep = area <= cfg.filters.max_area_km2
@@ -131,10 +144,11 @@ def run_unit(unit_geom, cfg: PreFireConfig, *, unit_key: str, crs=None) -> dict:
                  >= cfg.filters.min_slope)
         keep &= (np.asarray(segments.confinement(terr.conditioned, 4), dtype=float)
                  <= cfg.filters.max_confinement_deg)
+    if not keep.any():
+        return _empty("no segments passed filtering")
     segments.keep(np.asarray(segments.continuous(keep), dtype=bool))
     if segments.size == 0:
-        return {"unit_key": unit_key, "segments": segments, "n_segments": 0,
-                "props": {}, "meta": {"note": "no segments after filtering"}}
+        return _empty("no segments after flow-continuity filtering")
     segments.locate_basins()
 
     # --- models --------------------------------------------------------------

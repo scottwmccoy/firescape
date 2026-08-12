@@ -85,6 +85,10 @@ def network(dem, domain_mask, *, min_area_km2: float | None = None,
     npix = watershed.accumulation(terr.flow)
     area_km2 = npix.values.astype("float64") * pixel_km2(dem)
     mask_arr = (area_km2 >= min_area) & (domain.values.astype(bool))
+    if not mask_arr.any():
+        # Fully masked unit (playa, lake, valley floor): pfdf raises on an
+        # empty mask, so report it as "no network" instead.
+        return None, terr
     mask = Raster.from_array(mask_arr, spatial=dem, isbool=True)
     segments = Segments(terr.flow, mask, max_length=max_len, units="meters")
     return segments, terr
