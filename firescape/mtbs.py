@@ -92,11 +92,30 @@ def fire_records(*, event_id_like: str | None = "NV%", after: str | None = None,
     gdf = gpd.GeoDataFrame.from_features(r.json().get("features", []), crs="EPSG:3857")
     if len(gdf):
         gdf = gdf.to_crs("EPSG:4326")
+        if "ig_date" in gdf.columns:  # served as e.g. '1985-06-19Z'
+            import pandas as pd
+
+            gdf["ig_date"] = pd.to_datetime(
+                gdf["ig_date"].astype(str).str.rstrip("Z"), errors="coerce"
+            )
         if bbox4326 is not None:
             from shapely.geometry import box
 
             gdf = gdf[gdf.intersects(box(*bbox4326))].reset_index(drop=True)
     return gdf
+
+
+def dedupe_records(gdf):
+    """One row per event_id, preferring rows with usable analyst thresholds.
+
+    The WFS layer carries duplicate records for some fires (re-assessments,
+    alternate mappings with zeroed thresholds); keep the row with a valid
+    low-moderate threshold (mod_t > 0), then the larger mapped area.
+    """
+    df = gdf.copy()
+    df["_has_t"] = (df.get("mod_t", 0) > 0).astype(int)
+    df = df.sort_values(["_has_t", "burnbndac"], ascending=False)
+    return df.drop_duplicates("event_id", keep="first").drop(columns="_has_t")
 
 
 def severity_mosaic(year: int, bounds4326, dest: Path, *, timeout: float = 600.0) -> Path:

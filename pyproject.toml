@@ -40,4 +40,4 @@ firescape = "firescape.cli:main"
 include = ["firescape*"]
 
 [tool.setuptools.package-data]
-firescape = ["data/**/*.txt", "data/**/*.toml", "data/**/*.geojson", "data/**/*.md"]
+firescape = ["data/**/*.txt", "data/**/*.toml", "data/**/*.geojson", "data/**/*.md", "data/**/*.csv"]
