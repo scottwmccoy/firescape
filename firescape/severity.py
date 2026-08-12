@@ -56,12 +56,17 @@ def load_cdf_table(path: str | Path | None = None) -> pd.DataFrame:
     return table.set_index("EVT_Code").sort_index()
 
 
-def weibull_dnbr(pdsim: float, lam: np.ndarray | float, kappa: np.ndarray | float):
-    """Invert the Weibull CDF at percentile ``pdsim`` -> dNBR(x1000)."""
-    if not 0.0 < pdsim < 1.0:
+def weibull_dnbr(pdsim, lam: np.ndarray | float, kappa: np.ndarray | float):
+    """Invert the Weibull CDF at percentile(s) ``pdsim`` -> dNBR(x1000).
+
+    ``pdsim`` may be a scalar or an array (broadcast against lam/kappa).
+    """
+    p = np.asarray(pdsim, dtype=float)
+    if np.any(p <= 0.0) or np.any(p >= 1.0):
         raise ValueError(f"pdsim must be in (0, 1), got {pdsim}")
-    z = lam * (-np.log1p(-pdsim)) ** (1.0 / np.asarray(kappa, dtype=float))
-    return z * _DNBR_SCALE + _DNBR_OFFSET
+    z = lam * (-np.log1p(-p)) ** (1.0 / np.asarray(kappa, dtype=float))
+    out = z * _DNBR_SCALE + _DNBR_OFFSET
+    return float(out) if np.isscalar(pdsim) and np.ndim(out) == 0 else out
 
 
 def simulate_dnbr(
