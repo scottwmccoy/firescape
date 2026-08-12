@@ -10,6 +10,7 @@ build here sets nodata explicitly.
 
 from __future__ import annotations
 
+import math
 from types import SimpleNamespace
 
 import numpy as np
@@ -118,6 +119,83 @@ def usgs_filter(segments, *, burned, perimeter, slopes, dem_conditioned,
     return np.asarray(adjusted, dtype=bool)
 
 
-def rossi_masks(dem, evt=None):
-    """Valley (focal std <=5 m @200 m, >=1 km2), sink, and water masks (M4)."""
-    raise NotImplementedError("delineate.rossi_masks lands in milestone M4")
+#: LANDFIRE EVT class-name fragments treated as non-burnable / non-source
+#: (water bodies, permanent snow and ice, quarries/mines). Matched
+#: case-insensitively against the EVT legend, so this survives code changes.
+WATER_NAME_PATTERNS = ("open water", "snow", "ice", "quarr", "aquaculture")
+
+
+def _focal_std(values: np.ndarray, radius_px: int) -> np.ndarray:
+    """Standard deviation of a raster in a square window (Rossi's focal std).
+
+    Uses E[x^2] - E[x]^2 via uniform filters — O(n) regardless of radius.
+    """
+    from scipy.ndimage import uniform_filter
+
+    a = np.asarray(values, dtype="float64")
+    size = 2 * radius_px + 1
+    mean = uniform_filter(a, size=size, mode="nearest")
+    mean_sq = uniform_filter(a * a, size=size, mode="nearest")
+    return np.sqrt(np.clip(mean_sq - mean * mean, 0, None))
+
+
+def _drop_small(mask: np.ndarray, min_km2: float, pixel_area_km2: float) -> np.ndarray:
+    """Remove connected clusters smaller than ``min_km2`` (Rossi's polygon-area
+    filter, done in raster space)."""
+    from scipy.ndimage import label
+
+    lab, n = label(mask)
+    if n == 0:
+        return mask
+    counts = np.bincount(lab.ravel())
+    min_px = max(1, int(round(min_km2 / pixel_area_km2)))
+    keep = np.zeros(counts.size, dtype=bool)
+    keep[1:] = counts[1:] >= min_px
+    return keep[lab]
+
+
+def rossi_masks(dem, flow=None, evt=None, evt_water_codes=None, *,
+                valley_radius_m: float = 200.0, valley_std_m: float = 5.0,
+                min_cluster_km2: float = 1.0) -> dict:
+    """Exclusion masks for pre-fire delineation, after Rossi et al. (2025).
+
+    - **valley**: focal std of elevation <= 5 m within a 200 m radius,
+      clusters >= 1 km^2 (flat valley floors where basins are artifacts).
+    - **sink**: cells with no flow direction (pfdf/pysheds nulls after
+      conditioning), clusters >= 1 km^2, restricted to cells that also fall in
+      the valley mask — exactly Rossi's "must intersect the valley mask" rule.
+    - **water**: EVT open-water / snow-ice / quarry classes.
+
+    Returns a dict of boolean arrays plus their union under ``"exclude"``.
+    """
+    px_km2 = pixel_km2(dem)
+    px_m = math.sqrt(px_km2 * 1e6)
+    radius_px = max(1, int(round(valley_radius_m / px_m)))
+
+    valley = _focal_std(dem.values, radius_px) <= valley_std_m
+    valley = _drop_small(valley, min_cluster_km2, px_km2)
+
+    if flow is not None:
+        nulls = ~np.isfinite(flow.values.astype("float64")) if flow.nodata is None else (
+            flow.values == flow.nodata)
+        sink = _drop_small(np.asarray(nulls, dtype=bool), min_cluster_km2, px_km2) & valley
+    else:
+        sink = np.zeros(dem.shape, dtype=bool)
+
+    if evt is not None and evt_water_codes:
+        water = np.isin(evt.values, list(evt_water_codes))
+    else:
+        water = np.zeros(dem.shape, dtype=bool)
+
+    return {"valley": valley, "sink": sink, "water": water,
+            "exclude": valley | sink | water}
+
+
+def water_codes_from_legend(legend, *, value_col: str = "Value",
+                            name_col: str = "EVT_NAME") -> list[int]:
+    """EVT codes whose class names indicate water / snow-ice / quarries."""
+    names = legend[name_col].astype(str).str.lower()
+    hit = np.zeros(len(legend), dtype=bool)
+    for pat in WATER_NAME_PATTERNS:
+        hit |= names.str.contains(pat, regex=False).to_numpy()
+    return [int(v) for v in legend.loc[hit, value_col]]
