@@ -164,12 +164,82 @@ def download_perimeters(dest_dir: Path | None = None) -> Path:
     return dest
 
 
-def bundle_note() -> str:
-    return (
-        "Per-fire MTBS bundles (dnbr.tif, dnbr6.tif, burn_bndy.shp, metadata) "
-        "have no static URL. Order via https://burnseverity.cr.usgs.gov/viewer/"
-        "?product=MTBS (email queue, <=500 fires, ~1 h) into "
-        "raw/mtbs/fires/<event_id>/, or POST file_paths="
-        "'<map_prog>/<year>/<event_id>.zip' to "
-        "https://edcintl.cr.usgs.gov/mtbs_remote_zip_servlet/ZipServlet."
-    )
+ADDQUEUE_URL = "https://burnseverity.cr.usgs.gov/downloads/addQueue.php"
+
+#: mapping_products entries are the viewer checkbox labels VERBATIM.
+BUNDLE_PRODUCTS_DEFAULT = (
+    "Metadata",
+    "Continuous severity (i.e dnbr)",
+    "6 - Class thematic severity",
+    "Burned area boundary",
+)
+
+
+def order_bundles(event_ids, email: str, *, products=BUNDLE_PRODUCTS_DEFAULT,
+                  projection: str = "Albers", timeout: float = 180.0) -> dict:
+    """Order per-fire MTBS bundles through the burn-severity email queue.
+
+    Replicates the viewer's cDownloadBtn flow (reverse-engineered from
+    burnseverity.cr.usgs.gov/viewer main bundle, validated 2026-08-12):
+    a WFS lookup resolves each event to (map_id, nonstandard); standard fires
+    go in ``mapping_ids``, nonstandard ones as ``[path, map_id]`` bundles with
+    path ``<map_prog_lower>/<ig_year>/<event_id>.zip``. The queue emails
+    download links to ``email``, usually within ~1 h; max 500 fires/request.
+    ``projection`` is "Albers" or "UTM". Returns the parsed server response
+    (expect ``{"success": true}``).
+
+    NOTE: the legacy ZipServlet at edcintl returns 503 — this queue is the
+    only working programmatic route for bundles.
+    """
+    import json as _json
+
+    import requests
+
+    event_ids = list(event_ids)
+    if len(event_ids) > 500:
+        raise ValueError(f"queue accepts <=500 fires per request, got {len(event_ids)}")
+    ids = ",".join(f"'{e}'" for e in event_ids)
+    r = requests.get(f"{GEOSERVER}/mtbs/wfs", params={
+        "service": "WFS", "version": "1.1.0", "request": "GetFeature",
+        "typeNames": "mtbs:burn_severity_fire_polygons",
+        "outputFormat": "application/json",
+        "cql_filter": f"event_id IN ({ids})",
+    }, timeout=timeout, headers={"User-Agent": paths.BROWSER_UA})
+    r.raise_for_status()
+    seen: dict[str, dict] = {}
+    for f in r.json()["features"]:
+        p = f["properties"]
+        prev = seen.get(p["event_id"])
+        if prev is None or (prev.get("nonstandard") and not p.get("nonstandard")):
+            seen[p["event_id"]] = p
+    missing = set(event_ids) - set(seen)
+    if missing:
+        raise ValueError(f"event_ids not found in MTBS WFS: {sorted(missing)}")
+
+    mapping_ids, mapping_bundles = [], []
+    for p in seen.values():
+        if p.get("nonstandard"):
+            path = f"{str(p['map_prog']).lower()}/{str(p['ig_date'])[:4]}/{p['event_id']}.zip"
+            mapping_bundles.append([path, p["map_id"]])
+        else:
+            mapping_ids.append(p["map_id"])
+
+    payload = {
+        "download_type": "mapping_products",
+        "mapping_bundles": mapping_bundles,
+        "mapping_ids": mapping_ids,
+        "mapping_products": list(products),
+        "projection": projection,
+        "mosaics": [],
+    }
+    resp = requests.post(ADDQUEUE_URL, data={
+        "products": _json.dumps(payload),
+        "email": email,
+        "request_origin": "'viewer'",   # literal quotes, matching the viewer JS
+    }, timeout=timeout, headers={
+        "User-Agent": paths.BROWSER_UA,
+        "Referer": "https://burnseverity.cr.usgs.gov/viewer/",
+        "Origin": "https://burnseverity.cr.usgs.gov",
+    })
+    resp.raise_for_status()
+    return resp.json()

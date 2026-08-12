@@ -50,7 +50,12 @@ Pre-fire PFDF hazard tool for Nevada (USGS LHP award, Task 2/Deliverable 2, due
   (geometry is EPSG:3857 — a lon/lat BBOX() cql filter silently returns 0 rows);
   annual severity mosaics via WCS `edcintl.cr.usgs.gov/geoserver/mtbs/wcs`,
   coverageId `mtbs__mtbs_CONUS_<year>` (double underscore). Per-fire bundles
-  (dnbr.tif) have NO static URL — ZipServlet POST or viewer email queue.
+  (dnbr.tif): the legacy edcintl ZipServlet returns 503 — the WORKING route is
+  the email queue, `mtbs.order_bundles()` (POST to
+  burnseverity.cr.usgs.gov/downloads/addQueue.php with download_type
+  "mapping_products", map_ids from a WFS lookup, product labels VERBATIM like
+  "Continuous severity (i.e dnbr)", request_origin literally `'viewer'` with
+  quotes; links arrive by email ~1 h, <=500 fires/request).
 - NOAA Atlas 14 vol 1 grids: `hdsc.nws.noaa.gov/pub/hdsc/data/sw/sw{ARI}yr{DUR}ma[_ams].zip`
   (1000ths of inch; 1-yr exists as PDS only). NV = `sw`; CA sliver of pilot needs `ca`.
   Atlas 15: nothing covers NV yet (CONUS prelim ~Sept 2026, 1-h+ durations only).
