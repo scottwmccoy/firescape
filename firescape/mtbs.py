@@ -164,6 +164,33 @@ def download_perimeters(dest_dir: Path | None = None) -> Path:
     return dest
 
 
+def fire_bundle(event_id: str, fires_dir: Path | None = None) -> dict[str, Path]:
+    """Locate a downloaded per-fire bundle's files by role.
+
+    Returns a dict with keys among {'dnbr', 'dnbr6', 'burn_area', 'metadata'}
+    for raw/mtbs/fires/<EVENT_ID>/ as written by the addQueue ingest.
+    """
+    fires_dir = Path(fires_dir) if fires_dir else paths.raw_dir("mtbs", "fires")
+    d = fires_dir / event_id.upper()
+    if not d.is_dir():
+        raise FileNotFoundError(f"no bundle directory for {event_id} at {d}")
+    out: dict[str, Path] = {}
+    for f in d.iterdir():
+        n = f.name.lower()
+        if n.endswith("_dnbr.tif"):
+            out["dnbr"] = f
+        elif n.endswith("_dnbr6.tif"):
+            out["dnbr6"] = f
+        elif n.endswith("_burn_area.shp"):
+            out["burn_area"] = f
+        elif n.endswith("_metadata.xml") and "iso" not in n:
+            out["metadata"] = f
+    missing = {"dnbr", "burn_area"} - set(out)
+    if missing:
+        raise FileNotFoundError(f"bundle {event_id} missing {sorted(missing)} in {d}")
+    return out
+
+
 ADDQUEUE_URL = "https://burnseverity.cr.usgs.gov/downloads/addQueue.php"
 
 #: mapping_products entries are the viewer checkbox labels VERBATIM.
