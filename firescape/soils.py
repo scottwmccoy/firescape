@@ -170,6 +170,22 @@ def kf_factor_ssurgo(bounds4326, *, tile_deg: float = 0.25, timeout: float = 240
     return soils[["mukey", "kf", "geometry"]]
 
 
+def rasterize_kf(soil_gdf, template, *, kf_col: str = "kf"):
+    """Burn polygon KF values onto a template raster's grid (pfdf Raster)."""
+    import numpy as np
+    from pfdf.raster import Raster
+    from rasterio.features import rasterize
+
+    crs = template.crs
+    gdf = soil_gdf.to_crs(crs)
+    gdf = gdf[gdf[kf_col].notna()]
+    shapes = ((geom, float(kf)) for geom, kf in zip(gdf.geometry, gdf[kf_col]))
+    arr = rasterize(shapes, out_shape=template.shape,
+                    transform=template.transform.affine, fill=np.nan,
+                    dtype="float32", all_touched=False)
+    return Raster.from_array(arr, spatial=template, nodata=np.float32(np.nan))
+
+
 def zonal_kf(basins, soils, *, kf_col: str = "kf"):
     """Area-weighted mean KF within each basin polygon.
 

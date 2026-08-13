@@ -35,6 +35,18 @@ from firescape.delineate import (match_grid, network, rossi_masks, terrain,
 #: Placeholder used only when STATSGO cannot be reached (flagged in run_meta).
 KF_FALLBACK = 0.25
 
+_KF_POLY_CACHE: dict = {}
+
+
+def _load_kf_polygons(path):
+    """Read (once per process) a soil-polygon layer carrying a ``kf`` column."""
+    import geopandas as gpd
+
+    key = str(path)
+    if key not in _KF_POLY_CACHE:
+        _KF_POLY_CACHE[key] = gpd.read_file(path)
+    return _KF_POLY_CACHE[key]
+
 
 @dataclass
 class PreFireConfig:
@@ -50,11 +62,21 @@ class PreFireConfig:
     strict_filters: bool = False
     kf_cache_dir: Path | None = None
     region: str = "pilot"
+    #: packaged CDF table name (see severity.PACKAGED_TABLES)
+    cdf_table: str = "staley2018"
+    #: pre-fetched soil polygons with a ``kf`` column; used instead of STATSGO
+    kf_polygons: Path | None = None
 
 
 def _kf_raster(dem, cfg: PreFireConfig, unit_key: str):
-    """Real STATSGO KF if reachable (cached per unit), else flagged constant."""
+    """KF raster for a unit: supplied soil polygons, else STATSGO, else a
+    flagged constant. Returns (Raster, source label for run metadata)."""
     from pfdf.raster import Raster
+
+    if cfg.kf_polygons is not None:
+        gdf = _load_kf_polygons(cfg.kf_polygons)
+        if len(gdf):
+            return soils.rasterize_kf(gdf, dem), f"ssurgo:{Path(cfg.kf_polygons).name}"
 
     cache_dir = cfg.kf_cache_dir or paths.interim_dir("kf_cache")
     cache = Path(cache_dir) / f"{unit_key}_kf.tif"
@@ -110,7 +132,7 @@ def run_unit(unit_geom, cfg: PreFireConfig, *, unit_key: str, crs=None) -> dict:
     evt = match_grid(Raster.from_file(cfg.evt_path, bounds=dem.bounds), dem,
                      resampling="nearest")
     evt_values = severity.apply_crosswalk(evt.values, cfg.crosswalk)
-    cdf = severity.load_cdf_table()
+    cdf = severity.load_cdf_table(table=cfg.cdf_table)
     sim_dnbr, src_flag = severity.simulate_dnbr(evt_values, cfg.pdsim, cdf)
     sim_barc = severity.classify_barc4(sim_dnbr, cfg.barc_breaks)
 
@@ -188,6 +210,7 @@ def run_unit(unit_geom, cfg: PreFireConfig, *, unit_key: str, crs=None) -> dict:
         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "region": cfg.region,
         "pdsim": cfg.pdsim,
+        "cdf_table": cfg.cdf_table,
         "barc_breaks": list(cfg.barc_breaks),
         "i15_mmh": cfg.i15_mmh,
         "threshold_p": cfg.threshold_p,
