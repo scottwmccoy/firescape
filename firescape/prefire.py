@@ -74,7 +74,17 @@ def _kf_raster(dem, cfg: PreFireConfig, unit_key: str):
     from pfdf.raster import Raster
 
     if cfg.kf_polygons is not None:
-        gdf = _load_kf_polygons(cfg.kf_polygons)
+        import geopandas as gpd
+
+        from firescape.statewide import bounds4326
+
+        try:      # bbox read: GPKG spatial index makes this cheap per unit
+            bb = bounds4326(tuple(dem.bounds)[:4] if not hasattr(dem.bounds, "left")
+                            else (dem.bounds.left, dem.bounds.bottom,
+                                  dem.bounds.right, dem.bounds.top))
+            gdf = gpd.read_file(cfg.kf_polygons, bbox=bb)
+        except Exception:
+            gdf = _load_kf_polygons(cfg.kf_polygons)
         if len(gdf):
             return soils.rasterize_kf(gdf, dem), f"ssurgo:{Path(cfg.kf_polygons).name}"
 
@@ -95,10 +105,13 @@ def _kf_raster(dem, cfg: PreFireConfig, unit_key: str):
                 f"CONSTANT-{KF_FALLBACK}-PROVISIONAL ({type(e).__name__})")
 
 
-def run_unit(unit_geom, cfg: PreFireConfig, *, unit_key: str, crs=None) -> dict:
+def run_unit(unit_geom, cfg: PreFireConfig, *, unit_key: str, crs=None,
+             dem=None, evt=None) -> dict:
     """Compute the pre-fire hazard surface for one unit.
 
     ``unit_geom``: shapely geometry (in ``crs``, default the DEM's CRS).
+    ``dem``/``evt``: optional pre-built pfdf Rasters (statewide tile-store
+    reads); when omitted they load from cfg.dem_path / cfg.evt_path.
     Returns a dict of per-segment arrays, the Segments object, and metadata.
     """
     import geopandas as gpd
@@ -106,13 +119,17 @@ def run_unit(unit_geom, cfg: PreFireConfig, *, unit_key: str, crs=None) -> dict:
     from pfdf.raster import Raster
 
     # --- clip DEM to the unit ------------------------------------------------
-    import rasterio
+    if dem is None:
+        import rasterio
 
-    with rasterio.open(cfg.dem_path) as src:
-        dem_crs = src.crs
-    gseries = gpd.GeoSeries([unit_geom], crs=crs or dem_crs).to_crs(dem_crs)
-    w, s, e, n = gseries.total_bounds
-    dem = Raster.from_file(cfg.dem_path, bounds=BoundingBox(w, s, e, n, crs=dem_crs))
+        with rasterio.open(cfg.dem_path) as src:
+            dem_crs = src.crs
+        gseries = gpd.GeoSeries([unit_geom], crs=crs or dem_crs).to_crs(dem_crs)
+        w, s, e, n = gseries.total_bounds
+        dem = Raster.from_file(cfg.dem_path, bounds=BoundingBox(w, s, e, n, crs=dem_crs))
+    else:
+        dem_crs = dem.crs
+        gseries = gpd.GeoSeries([unit_geom], crs=crs or dem_crs).to_crs(dem_crs)
 
     # Delineation is confined to the unit polygon so adjacent units cannot
     # produce duplicate basins. HU boundaries follow drainage divides, so a
@@ -129,8 +146,9 @@ def run_unit(unit_geom, cfg: PreFireConfig, *, unit_key: str, crs=None) -> dict:
     unit_path.unlink(missing_ok=True)
 
     # --- simulated severity --------------------------------------------------
-    evt = match_grid(Raster.from_file(cfg.evt_path, bounds=dem.bounds), dem,
-                     resampling="nearest")
+    if evt is None:
+        evt = Raster.from_file(cfg.evt_path, bounds=dem.bounds)
+    evt = match_grid(evt, dem, resampling="nearest")
     evt_values = severity.apply_crosswalk(evt.values, cfg.crosswalk)
     cdf = severity.load_cdf_table(table=cfg.cdf_table)
     sim_dnbr, src_flag = severity.simulate_dnbr(evt_values, cfg.pdsim, cdf)
