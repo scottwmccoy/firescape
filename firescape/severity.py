@@ -152,6 +152,7 @@ REMAP_SEMANTIC = {
     9328: 3943,  # Interior W. Temperate Ruderal Shrubland -> Undeveloped Ruderal Shrubland
     9336: 3943,  # GB&IM Ruderal Shrubland -> Undeveloped Ruderal Shrubland
     9503: 3255,  # GB Foothill/Lower Montane Riparian Shrubland -> IMB Montane Riparian Shrubland
+    9301: 3184,  # California Ruderal Grassland and Meadow -> California Annual Grassland
 }
 
 

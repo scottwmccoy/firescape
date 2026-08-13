@@ -20,49 +20,63 @@ DEM_RES_M = 10.0
 
 def _mosaic_to_grid(sources: list[Path], bounds5070, *, resolution: float,
                     resampling: str, dtype=None, pad_m: float = 300.0):
-    """Mosaic the tiles intersecting ``bounds5070`` and warp once to the
-    working grid. Returns (array, transform) or None if no tiles intersect."""
+    """Composite every source intersecting ``bounds5070`` onto the working
+    grid, reprojecting each source independently (LFPS delivers each chunk in
+    its own Albers parameterization, so a shared-CRS merge is impossible).
+    Each source is warped exactly once, native grid -> working grid. Returns
+    (array, transform) or None if nothing intersects."""
     import rasterio
-    from rasterio.merge import merge as rio_merge
-    from rasterio.warp import (Resampling, calculate_default_transform,
-                               reproject, transform_bounds)
+    from rasterio.transform import from_origin
+    from rasterio.warp import Resampling, reproject, transform_bounds
+    from rasterio.windows import from_bounds as window_from_bounds
 
     w, s, e, n = bounds5070
     w, s, e, n = w - pad_m, s - pad_m, e + pad_m, n + pad_m
+    # snap the destination grid to the resolution so unit grids align
+    w = np.floor(w / resolution) * resolution
+    s = np.floor(s / resolution) * resolution
+    e = np.ceil(e / resolution) * resolution
+    n = np.ceil(n / resolution) * resolution
+    width = int(round((e - w) / resolution))
+    height = int(round((n - s) / resolution))
+    dst_transform = from_origin(w, n, resolution, resolution)
+    fillv = np.nan if dtype is None else 0
+    dst = np.full((height, width), fillv, dtype="float32" if dtype is None else dtype)
 
-    datasets = []
+    hit = False
     for p in sources:
-        ds = rasterio.open(p)
-        try:
-            tb = transform_bounds(ds.crs, WORK_CRS, *ds.bounds)
-        except Exception:
-            ds.close()
-            continue
-        if tb[0] < e and tb[2] > w and tb[1] < n and tb[3] > s:
-            datasets.append(ds)
-        else:
-            ds.close()
-    if not datasets:
+        with rasterio.open(p) as ds:
+            try:
+                tb = transform_bounds(ds.crs, WORK_CRS, *ds.bounds)
+            except Exception:
+                continue
+            if not (tb[0] < e and tb[2] > w and tb[1] < n and tb[3] > s):
+                continue
+            # read only the window covering the unit (plus margin)
+            sw_, ss_, se_, sn_ = transform_bounds(WORK_CRS, ds.crs, w, s, e, n)
+            win = window_from_bounds(sw_, ss_, se_, sn_, ds.transform)
+            win = win.round_offsets().round_lengths()
+            try:  # raises WindowError when the overlap is empty
+                win = win.intersection(rasterio.windows.Window(0, 0, ds.width, ds.height))
+            except rasterio.errors.WindowError:
+                continue
+            if win.width <= 0 or win.height <= 0:
+                continue
+            arr = ds.read(1, window=win)
+            piece = np.full_like(dst, fillv)
+            reproject(arr, piece,
+                      src_transform=ds.window_transform(win), src_crs=ds.crs,
+                      src_nodata=ds.nodata,
+                      dst_transform=dst_transform, dst_crs=WORK_CRS,
+                      dst_nodata=fillv,
+                      resampling=getattr(Resampling, resampling))
+            empty = np.isnan(dst) if dtype is None else (dst == fillv)
+            have = ~np.isnan(piece) if dtype is None else (piece != fillv)
+            put = empty & have
+            dst[put] = piece[put]
+            hit = True
+    if not hit:
         return None
-    try:
-        src_crs = datasets[0].crs
-        src_bounds = transform_bounds(WORK_CRS, src_crs, w, s, e, n)
-        arr, src_transform = rio_merge(datasets, bounds=src_bounds)
-        arr = arr[0]
-        nodata = datasets[0].nodata
-    finally:
-        for ds in datasets:
-            ds.close()
-
-    dst_transform, width, height = calculate_default_transform(
-        src_crs, WORK_CRS, arr.shape[1], arr.shape[0], *src_bounds,
-        resolution=(resolution, resolution))
-    dst = np.full((height, width), np.nan if dtype is None else 0,
-                  dtype="float32" if dtype is None else dtype)
-    reproject(arr, dst, src_transform=src_transform, src_crs=src_crs,
-              src_nodata=nodata, dst_transform=dst_transform, dst_crs=WORK_CRS,
-              dst_nodata=np.nan if dtype is None else 0,
-              resampling=getattr(Resampling, resampling))
     return dst, dst_transform
 
 
