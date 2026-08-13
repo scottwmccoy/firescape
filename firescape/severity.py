@@ -37,16 +37,33 @@ BARREN_EVT_CODE = 3001
 SRC_NODATA, SRC_DIRECT, SRC_FALLBACK = 0, 1, 2
 
 
-def load_cdf_table(path: str | Path | None = None) -> pd.DataFrame:
-    """Load the Weibull CDF parameter table, indexed by EVT code.
+#: Packaged CDF tables. "staley2018" is the published western-US release;
+#: "nv_merged" is that release with Nevada era-matched refits overriding the
+#: classes we have local data for (see data/staley2018/PROVENANCE.md).
+PACKAGED_TABLES = {
+    "staley2018": "CDFParameters.txt",
+    "nv_merged": "CDFParameters_NV_merged.csv",
+    "nv_refit": "CDFParameters_NV_refit.csv",
+}
 
-    Columns: N, Weibull_Lambda_Scale, Weibull_Kappa_Shape, Weibull_R2,
-    Weibull_RMSE, CLASSNAME.
+
+def load_cdf_table(path: str | Path | None = None, *,
+                   table: str = "staley2018") -> pd.DataFrame:
+    """Load a Weibull CDF parameter table, indexed by EVT code.
+
+    ``path`` loads an arbitrary file; otherwise ``table`` selects one of
+    PACKAGED_TABLES. Columns: N, Weibull_Lambda_Scale, Weibull_Kappa_Shape,
+    Weibull_R2, Weibull_RMSE, CLASSNAME.
     """
     if path is None:
-        ref = resources.files("firescape") / "data" / "staley2018" / "CDFParameters.txt"
+        try:
+            fname = PACKAGED_TABLES[table]
+        except KeyError:
+            raise KeyError(f"unknown table {table!r}; have {sorted(PACKAGED_TABLES)}") from None
+        ref = resources.files("firescape") / "data" / "staley2018" / fname
         with resources.as_file(ref) as p:
-            table = pd.read_csv(p)
+            table_df = pd.read_csv(p)
+        table = table_df
     else:
         table = pd.read_csv(path)
     required = {"EVT_Code", "Weibull_Lambda_Scale", "Weibull_Kappa_Shape"}

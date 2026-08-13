@@ -27,3 +27,37 @@
 The 3.6 GB `EVT_SampleData.zip` (per-fire samples underlying the fits) is NOT
 packaged - only needed if/when we refit Nevada-specific CDFs (deferred; see
 plan). Download it to Box `raw/staley2018/` at that point.
+
+## Nevada refit (added 2026-08-13)
+
+`CDFParameters_NV_refit.csv` (35 classes) and `CDFParameters_NV_merged.csv`
+(288 classes = Staley 2018 with the Nevada refits overriding matched classes).
+
+**Method.** Weibull CDFs refit from observed MTBS dNBR pooled over pilot-area
+fires, paired with **era-matched** vegetation: LANDFIRE **LF2016** EVT with
+fires that ignited **2017 or later**. Era matching is essential — EVT mapped
+after a fire describes POST-fire vegetation, and using it leaks burn severity
+into what is supposed to be a pre-fire prediction. Pixels are restricted to
+the MTBS burn perimeter, with dnbr6 classes 5 (increased greenness) and 6
+(non-mapping) excluded. Classes with fewer than 2,000 pixels are not refit.
+
+**Fit.** `severity.fit_weibull_cdf` — Weibull probability-plot linearization
+(`ln(-ln(1-F)) = kappa*ln(z) - kappa*ln(lambda)`), the same construction whose
+R^2/RMSE the Staley release tabulates. Median R^2 = 0.965 (min 0.858).
+
+**Result.** Refit from 1.95M pixels (16 fires). Staley 2018 systematically
+compresses the Nevada range: it *under*-predicts cheatgrass (Introduced Annual
+Grassland: 185 simulated vs 272 observed median dNBR) and montane conifer
+(363 vs 661), and *over*-predicts chaparral (516 vs 387). Weighted mean
+absolute error against observed class medians falls from **61.5 to 9.0 dNBR**.
+
+**Validation (leave-one-fire-out).** Refit from 15 fires with Loyalton (2020)
+held out entirely, then used to predict it: NSE **0.238 -> 0.497** at
+P_dsim 0.48 and **0.275 -> 0.519** at each table's own optimum; RMSE
+0.183 -> 0.149. See `products/calibration/cdf_holdout_eval.json`.
+
+**Caveats.** Fit from pilot-area fires only, so several classes (notably the
+Sierra conifer types) rest on Sierra-front data; statewide adoption needs a
+statewide fire set. The regional P_dsim (0.48) was calibrated against the
+Staley table — P_dsim and the CDF table are coupled, so adopting the merged
+table warrants recalibration (its held-out optimum sits near 0.54).
