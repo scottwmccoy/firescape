@@ -91,8 +91,9 @@ def load_cached(event_id: str, tag: str = "", table: str = "") -> FireCalib | No
 
 
 def fire_calibration(event_id: str, thresholds: tuple[float, float],
-                     regional_break: float, *, evt_path: Path,
+                     regional_break: float, *, evt_path: Path | None = None,
                      crosswalk: dict[int, int], dem_path: Path | None = None,
+                     dem=None, evt=None,
                      i15_mmh: float = 24.0, cdf_tables: dict | None = None,
                      tag: str = "") -> FireCalib | dict:
     """Calibrate P_dsim for one fire. ``thresholds`` = (low_t, mod_t) analyst
@@ -104,6 +105,11 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
     only difference between them is the per-class dNBR vector — which makes a
     table-vs-table comparison exact rather than merely reproducible. Returns a
     single FireCalib when ``cdf_tables`` is None, else a dict keyed by name.
+
+    ``dem``/``evt`` inject pre-built pfdf Rasters (the statewide seam, mirror
+    of prefire.run_unit): ``dem`` must already cover the fire perimeter plus
+    ``PERIMETER_BUFFER_M`` on the working grid; ``evt`` is aligned to it here.
+    Path-based loading (``dem_path``/``evt_path``) remains the pilot route.
     """
     import geopandas as gpd
     import rasterio
@@ -126,12 +132,16 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
     low_t, mod_t = thresholds
     cache = _cache_dir(event_id, tag)
     bundle = mtbs.fire_bundle(event_id)
-    dem_path = Path(dem_path) if dem_path else paths.interim_dir("pilot") / "pilot_dem.tif"
-    with rasterio.open(dem_path) as src:
-        dem_crs = src.crs
-    perim_gdf = gpd.read_file(bundle["burn_area"]).to_crs(dem_crs)
-    w, s, e, n = perim_gdf.union_all().buffer(PERIMETER_BUFFER_M).bounds
-    dem = Raster.from_file(dem_path, bounds=BoundingBox(w, s, e, n, crs=dem_crs))
+    if dem is None:
+        dem_path = Path(dem_path) if dem_path else paths.interim_dir("pilot") / "pilot_dem.tif"
+        with rasterio.open(dem_path) as src:
+            dem_crs = src.crs
+        perim_gdf = gpd.read_file(bundle["burn_area"]).to_crs(dem_crs)
+        w, s, e, n = perim_gdf.union_all().buffer(PERIMETER_BUFFER_M).bounds
+        dem = Raster.from_file(dem_path, bounds=BoundingBox(w, s, e, n, crs=dem_crs))
+    else:
+        dem_crs = dem.crs
+        perim_gdf = gpd.read_file(bundle["burn_area"]).to_crs(dem_crs)
     res = dem.resolution("meters")
     perim = match_grid(Raster.from_polygons(bundle["burn_area"], bounds=dem, resolution=res), dem)
     perim_arr = perim.values.astype(bool)
@@ -171,7 +181,11 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
            & (med_dnbr >= low_t) & np.isfinite(T_obs) & np.isfinite(F_obs))
 
     # ---- simulated side: class decomposition -------------------------------
-    evt = match_grid(Raster.from_file(evt_path, bounds=dem.bounds), dem, resampling="nearest")
+    if evt is None:
+        if evt_path is None:
+            raise ValueError("pass either evt= (Raster) or evt_path=")
+        evt = Raster.from_file(evt_path, bounds=dem.bounds)
+    evt = match_grid(evt, dem, resampling="nearest")
     evt_vals = severity.apply_crosswalk(evt.values, crosswalk)
     evt_vals = np.where(perim_arr, evt_vals, OUTSIDE_CODE)
     tables = dict(cdf_tables) if multi else {"default": severity.load_cdf_table()}
