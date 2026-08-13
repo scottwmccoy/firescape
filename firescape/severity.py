@@ -208,6 +208,63 @@ def classify_barc4(dnbr: np.ndarray, breaks: tuple[float, float, float]) -> np.n
     return barc
 
 
+def normalize_dnbr(dnbr) -> np.ndarray:
+    """dNBR(x1000) -> the [0, 1] space the Weibull CDFs are fit in."""
+    return (np.asarray(dnbr, dtype=float) - _DNBR_OFFSET) / _DNBR_SCALE
+
+
+def fit_weibull_cdf(values, *, n_points: int = 199, eps: float = 1e-6):
+    """Fit a 2-parameter Weibull CDF to normalized dNBR samples.
+
+    Uses the Weibull probability-plot linearization
+    ``ln(-ln(1-F)) = kappa*ln(z) - kappa*ln(lambda)``, i.e. a least-squares fit
+    to the empirical CDF — the same construction whose R^2/RMSE Staley et al.
+    (2018) report. Returns (lambda, kappa, r2, rmse, n).
+    """
+    z = np.asarray(values, dtype=float)
+    z = z[np.isfinite(z)]
+    z = z[(z > eps) & (z < 1 - eps)]
+    if z.size < 30:
+        return (np.nan, np.nan, np.nan, np.nan, int(z.size))
+    qs = np.linspace(0.005, 0.995, n_points)
+    zq = np.quantile(z, qs)
+    ok = zq > eps
+    x = np.log(zq[ok])
+    y = np.log(-np.log1p(-qs[ok]))
+    kappa, intercept = np.polyfit(x, y, 1)
+    lam = float(np.exp(-intercept / kappa)) if kappa != 0 else np.nan
+    pred = kappa * x + intercept
+    ss_res = float(np.sum((y - pred) ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else np.nan
+    # RMSE in CDF units, which is what the Staley release tabulates
+    f_pred = 1 - np.exp(-((zq[ok] / lam) ** kappa))
+    rmse = float(np.sqrt(np.mean((f_pred - qs[ok]) ** 2)))
+    return (lam, float(kappa), float(r2), rmse, int(z.size))
+
+
+def refit_table(samples: dict, *, min_n: int = 500,
+                classnames: dict | None = None) -> pd.DataFrame:
+    """Fit per-EVT-class Weibull CDFs from observed dNBR samples.
+
+    ``samples`` maps EVT code -> array of dNBR(x1000) values. Returns a table
+    in the Staley-release schema (EVT_Code, N, Weibull_Lambda_Scale,
+    Weibull_Kappa_Shape, Weibull_R2, Weibull_RMSE, CLASSNAME) so it can be
+    passed anywhere ``load_cdf_table()`` output is accepted.
+    """
+    classnames = classnames or {}
+    rows = []
+    for code, vals in sorted(samples.items()):
+        lam, kap, r2, rmse, n = fit_weibull_cdf(normalize_dnbr(vals))
+        if n < min_n or not np.isfinite(lam) or not np.isfinite(kap) or kap <= 0:
+            continue
+        rows.append({"EVT_Code": int(code), "N": n, "Weibull_Lambda_Scale": lam,
+                     "Weibull_Kappa_Shape": kap, "Weibull_R2": r2,
+                     "Weibull_RMSE": rmse,
+                     "CLASSNAME": classnames.get(int(code), "")})
+    return pd.DataFrame(rows).set_index("EVT_Code").sort_index()
+
+
 def coverage_report(evt: np.ndarray, cdf_table: pd.DataFrame | None = None) -> pd.DataFrame:
     """Tabulate EVT codes in an array vs. CDF-parameter availability.
 
