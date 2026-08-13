@@ -60,7 +60,8 @@ def dnbr6_to_barc4(dnbr6: np.ndarray) -> np.ndarray:
 
 
 def fire_records(*, event_id_like: str | None = "NV%", after: str | None = None,
-                 bbox4326=None, timeout: float = 180.0):
+                 min_acres: float | None = None, bbox4326=None,
+                 timeout: float = 180.0):
     """Per-fire MTBS records (attributes + perimeter) from the WFS layer.
 
     Attributes include ``event_id, irwinid, incid_name, ig_date, burnbndac,
@@ -68,15 +69,18 @@ def fire_records(*, event_id_like: str | None = "NV%", after: str | None = None,
     ``*_t`` fields are the fire-specific analyst dNBR thresholds needed for
     calibration (unburned-low = low_t, low-moderate = mod_t, mod-high = high_t).
 
-    ``bbox4326`` filters client-side after reprojection (see module docstring).
+    ``min_acres`` filters server-side (burnbndac is numeric). ``after``
+    (YYYY-MM-DD) and ``bbox4326`` filter client-side: ``ig_date`` is served as
+    a *string* property, so CQL temporal predicates 500 on this layer, and
+    lon/lat BBOX silently matches nothing (see module docstring).
     """
     import geopandas as gpd
 
     cql = []
     if event_id_like:
         cql.append(f"event_id LIKE '{event_id_like}'")
-    if after:
-        cql.append(f"ig_date AFTER {after}T00:00:00Z")
+    if min_acres is not None:
+        cql.append(f"burnbndac >= {float(min_acres):.0f}")
     params = {
         "service": "WFS",
         "version": "2.0.0",
@@ -98,6 +102,10 @@ def fire_records(*, event_id_like: str | None = "NV%", after: str | None = None,
             gdf["ig_date"] = pd.to_datetime(
                 gdf["ig_date"].astype(str).str.rstrip("Z"), errors="coerce"
             )
+        if after and "ig_date" in gdf.columns:
+            import pandas as pd
+
+            gdf = gdf[gdf["ig_date"] > pd.Timestamp(after)].reset_index(drop=True)
         if bbox4326 is not None:
             from shapely.geometry import box
 

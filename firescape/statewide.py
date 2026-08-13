@@ -63,10 +63,22 @@ def _mosaic_to_grid(sources: list[Path], bounds5070, *, resolution: float,
             if win.width <= 0 or win.height <= 0:
                 continue
             arr = ds.read(1, window=win)
+            # Mask source nodata to the fill value BEFORE warping and use the
+            # fill value as nodata on both sides. rasterio 1.5 initializes the
+            # uncovered destination with SRC nodata when src/dst nodata differ
+            # for integer grids — the raw -9999 then reads as data, and under
+            # first-valid-wins one chunk's out-of-coverage area masks every
+            # later chunk (statewide v0 EVT seam bug, found 2026-08-13).
+            if ds.nodata is not None:
+                if dtype is None:
+                    arr = np.where(arr == ds.nodata, np.nan,
+                                   arr.astype("float32"))
+                else:
+                    arr = np.where(arr == ds.nodata, fillv, arr)
             piece = np.full_like(dst, fillv)
             reproject(arr, piece,
                       src_transform=ds.window_transform(win), src_crs=ds.crs,
-                      src_nodata=ds.nodata,
+                      src_nodata=fillv,
                       dst_transform=dst_transform, dst_crs=WORK_CRS,
                       dst_nodata=fillv,
                       resampling=getattr(Resampling, resampling))
