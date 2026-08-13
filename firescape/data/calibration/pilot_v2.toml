@@ -1,0 +1,19 @@
+# Nevada pilot calibration v2 - recalibrated against the nv_merged CDF table.
+# Era-matched: LANDFIRE LF2016 vegetation with fires that ignited 2017+, so
+# the vegetation predates each fire (post-fire EVT would leak severity).
+# The low/moderate break is held at the pilot_v1 34-fire median (281) so the
+# CDF table is the only thing that changed between v1 and v2.
+
+[meta]
+name = "pilot_v2"
+created = 2026-08-12
+method = "rossi2025-dfl-calibration (logit-space solve)"
+cdf_source = "nv_merged (Staley 2018 + Nevada era-matched refit)"
+evt = "LF2016"
+fires_used = 10
+staley_control_pdsim = 0.52
+
+[regions.pilot]
+pdsim = 0.51
+barc_breaks = [125.0, 281, 500.0]
+fires = ["CA3983912034520210702", "NV4027311946420170830", "CA4007312014520170711", "NV3986111961620180727", "CA3968112017120200814", "NV3958711968320170703", "CA3983312003820200802", "NV3974111996820201005", "NV3976011968620170704", "NV3957611991320200627"]

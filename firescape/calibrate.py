@@ -66,17 +66,25 @@ class FireCalib:
         return self.pdsim is not None and np.isfinite(self.pdsim)
 
 
-def _cache_dir(event_id: str) -> Path:
-    return paths.interim_dir("calib", event_id.upper())
+def _cache_dir(event_id: str, tag: str = "") -> Path:
+    """Per-fire cache. ``tag`` separates runs that differ in an input the
+    cache cannot otherwise distinguish (e.g. the EVT vintage)."""
+    name = event_id.upper() + (f"__{tag}" if tag else "")
+    return paths.interim_dir("calib", name)
 
 
-def load_cached(event_id: str) -> FireCalib | None:
-    d = _cache_dir(event_id)
+def load_cached(event_id: str, tag: str = "", table: str = "") -> FireCalib | None:
+    d = _cache_dir(event_id, tag)
     f = d / "fire.json"
     if not f.exists():
         return None
     meta = json.loads(f.read_text())
-    return FireCalib(event_id=event_id.upper(), pdsim=meta.get("pdsim"),
+    pdsim = meta.get("pdsim")
+    if table:
+        pdsim = meta.get("pdsim_by_table", {}).get(table)
+        if pdsim is None:
+            return None
+    return FireCalib(event_id=event_id.upper(), pdsim=pdsim,
                      n_delineated=meta["n_delineated"], n_selected=meta["n_selected"],
                      validation_dT=meta["validation_dT"], validation_dF=meta["validation_dF"],
                      cache_dir=d)
@@ -85,9 +93,18 @@ def load_cached(event_id: str) -> FireCalib | None:
 def fire_calibration(event_id: str, thresholds: tuple[float, float],
                      regional_break: float, *, evt_path: Path,
                      crosswalk: dict[int, int], dem_path: Path | None = None,
-                     i15_mmh: float = 24.0) -> FireCalib:
+                     i15_mmh: float = 24.0, cdf_tables: dict | None = None,
+                     tag: str = "") -> FireCalib | dict:
     """Calibrate P_dsim for one fire. ``thresholds`` = (low_t, mod_t) analyst
-    values; ``regional_break`` classifies the simulated dNBR (Rossi Fig 3)."""
+    values; ``regional_break`` classifies the simulated dNBR (Rossi Fig 3).
+
+    ``cdf_tables`` maps a name to a CDF parameter table. The expensive work
+    (delineation, terrain, observed T/F, per-class catchment weights) does not
+    depend on the table, so every table is evaluated in the same pass and the
+    only difference between them is the per-class dNBR vector — which makes a
+    table-vs-table comparison exact rather than merely reproducible. Returns a
+    single FireCalib when ``cdf_tables`` is None, else a dict keyed by name.
+    """
     import geopandas as gpd
     import rasterio
     from pfdf import severity as pfsev
@@ -96,12 +113,18 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
     from pfdf.raster import Raster
     from pfdf.utils import intensity
 
-    cached = load_cached(event_id)
-    if cached is not None:
+    multi = cdf_tables is not None
+    cached = load_cached(event_id, tag)
+    if cached is not None and not multi:
         return cached
+    if cached is not None and multi:
+        have = json.loads((_cache_dir(event_id, tag) / "fire.json").read_text())
+        by_table = have.get("pdsim_by_table", {})
+        if all(name in by_table for name in cdf_tables):
+            return {name: load_cached(event_id, tag, name) for name in cdf_tables}
 
     low_t, mod_t = thresholds
-    cache = _cache_dir(event_id)
+    cache = _cache_dir(event_id, tag)
     bundle = mtbs.fire_bundle(event_id)
     dem_path = Path(dem_path) if dem_path else paths.interim_dir("pilot") / "pilot_dem.tif"
     with rasterio.open(dem_path) as src:
@@ -151,14 +174,19 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
     evt = match_grid(Raster.from_file(evt_path, bounds=dem.bounds), dem, resampling="nearest")
     evt_vals = severity.apply_crosswalk(evt.values, crosswalk)
     evt_vals = np.where(perim_arr, evt_vals, OUTSIDE_CODE)
-    cdf = severity.load_cdf_table()
+    tables = dict(cdf_tables) if multi else {"default": severity.load_cdf_table()}
+    cdf = next(iter(tables.values()))
     classes = [int(c) for c in np.unique(evt_vals) if c != OUTSIDE_CODE]
-    lam = np.array([cdf["Weibull_Lambda_Scale"].get(c, np.nan) for c in classes])
-    kap = np.array([cdf["Weibull_Kappa_Shape"].get(c, np.nan) for c in classes])
-    fb_lam = cdf.at[severity.BARREN_EVT_CODE, "Weibull_Lambda_Scale"]
-    fb_kap = cdf.at[severity.BARREN_EVT_CODE, "Weibull_Kappa_Shape"]
-    lam = np.where(np.isfinite(lam), lam, fb_lam)
-    kap = np.where(np.isfinite(kap), kap, fb_kap)
+
+    def _params(table):
+        lam = np.array([table["Weibull_Lambda_Scale"].get(c, np.nan) for c in classes])
+        kap = np.array([table["Weibull_Kappa_Shape"].get(c, np.nan) for c in classes])
+        fb_lam = table.at[severity.BARREN_EVT_CODE, "Weibull_Lambda_Scale"]
+        fb_kap = table.at[severity.BARREN_EVT_CODE, "Weibull_Kappa_Shape"]
+        return (np.where(np.isfinite(lam), lam, fb_lam),
+                np.where(np.isfinite(kap), kap, fb_kap))
+
+    lam, kap = _params(cdf)
 
     steep = terr.slopes.values >= STEEP_GRADIENT
     W = np.zeros((segments.size, len(classes)))
@@ -195,22 +223,39 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
     B, Ct, Cf, Cs = s17.M1.parameters(durations=[15])
     Ct, Cf = float(np.squeeze(Ct)), float(np.squeeze(Cf))
     R = float(np.squeeze(intensity.to_accumulation(i15_mmh, durations=[15])))
-    dX = (Ct * (T_sim - T_obs[:, None]) + Cf * (F_sim - F_obs[:, None])) * R  # [nb, nP]
-    best_idx = np.argmin(np.abs(dX), axis=1)
-    best_p = PDSIM_GRID[best_idx]
 
-    fire_pdsim = float(np.median(best_p[sel])) if sel.sum() >= 3 else None
+    def _solve(T_s, F_s):
+        dX = (Ct * (T_s - T_obs[:, None]) + Cf * (F_s - F_obs[:, None])) * R
+        bp = PDSIM_GRID[np.argmin(np.abs(dX), axis=1)]
+        return bp, (float(np.median(bp[sel])) if sel.sum() >= 3 else None)
+
+    best_p, fire_pdsim = _solve(T_sim, F_sim)
+
+    # Per-table solves reuse W/Ws — only the per-class dNBR vector changes, so
+    # the tables differ by nothing but their parameters.
+    per_table, curves_extra = {}, {}
+    for name, table in tables.items():
+        if name == "default":
+            per_table[name], curves_extra[f"best_p_{name}"] = fire_pdsim, best_p
+            continue
+        lam_t, kap_t = _params(table)
+        D_t = severity.weibull_dnbr(PDSIM_GRID[:, None], lam_t[None, :], kap_t[None, :])
+        bp_t, pd_t = _solve(Ws @ (D_t >= regional_break).T.astype(float), (W @ D_t.T) / 1000.0)
+        per_table[name] = pd_t
+        curves_extra[f"best_p_{name}"] = bp_t
 
     # ---- cache --------------------------------------------------------------
     np.savez_compressed(
         cache / "curves.npz", ids=segments.ids, T_obs=T_obs, F_obs=F_obs,
         T_sim=T_sim.astype(np.float32), F_sim=F_sim.astype(np.float32),
         pdsim_grid=PDSIM_GRID, best_p=best_p, sel=sel, area=area,
-        ratio_in=ratio_in, med_dnbr=med_dnbr)
+        ratio_in=ratio_in, med_dnbr=med_dnbr, **curves_extra)
     pd.DataFrame({"Segment_ID": segments.ids, "area_km2": area, "ratio_in": ratio_in,
                   "med_dnbr": med_dnbr, "T_obs": T_obs, "F_obs": F_obs,
                   "best_pdsim": best_p, "selected": sel}).to_parquet(cache / "basins.parquet")
     meta = {"event_id": event_id.upper(), "pdsim": fire_pdsim,
+            "pdsim_by_table": per_table,
+            "evt_tag": tag,
             "n_delineated": int(n0), "n_selected": int(sel.sum()),
             "low_t": float(low_t), "mod_t": float(mod_t),
             "regional_break": float(regional_break),
@@ -218,6 +263,11 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
             "severity_source": "dnbr6" if "dnbr6" in bundle else "estimate(dnbr)",
             "solve_space": "logit (S cancels; KF-independent)"}
     (cache / "fire.json").write_text(json.dumps(meta, indent=2))
+    if multi:
+        return {name: FireCalib(event_id=event_id.upper(), pdsim=p,
+                                n_delineated=int(n0), n_selected=int(sel.sum()),
+                                validation_dT=dT, validation_dF=dF, cache_dir=cache)
+                for name, p in per_table.items()}
     return FireCalib(event_id=event_id.upper(), pdsim=fire_pdsim, n_delineated=int(n0),
                      n_selected=int(sel.sum()), validation_dT=dT, validation_dF=dF,
                      cache_dir=cache)
