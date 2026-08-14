@@ -95,6 +95,7 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
                      crosswalk: dict[int, int], dem_path: Path | None = None,
                      dem=None, evt=None,
                      i15_mmh: float = 24.0, cdf_tables: dict | None = None,
+                     dispersed_sigma: float | None = None,
                      tag: str = "") -> FireCalib | dict:
     """Calibrate P_dsim for one fire. ``thresholds`` = (low_t, mod_t) analyst
     values; ``regional_break`` classifies the simulated dNBR (Rossi Fig 3).
@@ -258,6 +259,24 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
         per_table[name] = pd_t
         curves_extra[f"best_p_{name}"] = bp_t
 
+    if dispersed_sigma:
+        # dispersed-quantile solves (sigma measured from observed severity;
+        # severity.class_exceedance/expected_dnbr) on the same W/Ws — stored
+        # under "<table>_disp" so det and dispersed calibrations coexist.
+        for name, table in tables.items():
+            lam_t, kap_t = _params(table)
+            tab = pd.DataFrame({"Weibull_Lambda_Scale": lam_t,
+                                "Weibull_Kappa_Shape": kap_t}, index=classes)
+            P_exc = np.stack([severity.class_exceedance(
+                classes, regional_break, float(p), tab, sigma=dispersed_sigma)
+                for p in PDSIM_GRID])                      # [nP, nc]
+            E_d = np.stack([severity.expected_dnbr(
+                classes, float(p), tab, sigma=dispersed_sigma)
+                for p in PDSIM_GRID])
+            bp_d, pd_d = _solve(Ws @ P_exc.T, (W @ E_d.T) / 1000.0)
+            per_table[f"{name}_disp"] = pd_d
+            curves_extra[f"best_p_{name}_disp"] = bp_d
+
     # ---- cache --------------------------------------------------------------
     np.savez_compressed(
         cache / "curves.npz", ids=segments.ids, T_obs=T_obs, F_obs=F_obs,
@@ -269,6 +288,7 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
                   "best_pdsim": best_p, "selected": sel}).to_parquet(cache / "basins.parquet")
     meta = {"event_id": event_id.upper(), "pdsim": fire_pdsim,
             "pdsim_by_table": per_table,
+            "dispersed_sigma": dispersed_sigma,
             "evt_tag": tag,
             "n_delineated": int(n0), "n_selected": int(sel.sum()),
             "low_t": float(low_t), "mod_t": float(mod_t),
