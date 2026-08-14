@@ -69,40 +69,10 @@ class PreFireConfig:
 
 
 def _kf_raster(dem, cfg: PreFireConfig, unit_key: str):
-    """KF raster for a unit: supplied soil polygons, else STATSGO, else a
-    flagged constant. Returns (Raster, source label for run metadata)."""
-    from pfdf.raster import Raster
-
-    if cfg.kf_polygons is not None:
-        import geopandas as gpd
-
-        from firescape.statewide import bounds4326
-
-        try:      # bbox read: GPKG spatial index makes this cheap per unit
-            bb = bounds4326(tuple(dem.bounds)[:4] if not hasattr(dem.bounds, "left")
-                            else (dem.bounds.left, dem.bounds.bottom,
-                                  dem.bounds.right, dem.bounds.top))
-            gdf = gpd.read_file(cfg.kf_polygons, bbox=bb)
-        except Exception:
-            gdf = _load_kf_polygons(cfg.kf_polygons)
-        if len(gdf):
-            return soils.rasterize_kf(gdf, dem), f"ssurgo:{Path(cfg.kf_polygons).name}"
-
-    cache_dir = cfg.kf_cache_dir or paths.interim_dir("kf_cache")
-    cache = Path(cache_dir) / f"{unit_key}_kf.tif"
-    if cache.exists():
-        return match_grid(Raster.from_file(cache), dem, resampling="nearest"), "statsgo-cached"
-    try:
-        kf = soils.kf_factor(dem)
-        try:
-            kf.save(cache, overwrite=True)
-        except Exception:
-            pass
-        return match_grid(kf, dem, resampling="nearest"), "statsgo"
-    except Exception as e:  # ScienceBase outage -> provisional constant
-        arr = np.full(dem.shape, KF_FALLBACK, dtype="float32")
-        return (Raster.from_array(arr, spatial=dem, nodata=np.float32(np.nan)),
-                f"CONSTANT-{KF_FALLBACK}-PROVISIONAL ({type(e).__name__})")
+    """KF raster for a unit (delegates to the shared soils.kf_raster chain:
+    supplied soil polygons, else STATSGO cached, else a flagged constant)."""
+    return soils.kf_raster(dem, polygons=cfg.kf_polygons,
+                           cache_dir=cfg.kf_cache_dir, key=unit_key)
 
 
 def run_unit(unit_geom, cfg: PreFireConfig, *, unit_key: str, crs=None,

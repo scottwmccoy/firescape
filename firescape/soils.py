@@ -206,3 +206,56 @@ def zonal_kf(basins, soils, *, kf_col: str = "kf"):
     agg = inter.groupby("_bid").agg(_wk=("_wk", "sum"), _w=("_w", "sum"))
     kf = (agg["_wk"] / agg["_w"]).reindex(basins["_bid"]).to_numpy()
     return kf
+
+
+KF_FALLBACK = 0.25
+_POLY_CACHE: dict = {}
+
+
+def kf_raster(dem, *, polygons=None, cache_dir=None, key: str = "kf"):
+    """KF raster on the ``dem`` grid with the project's full fallback chain:
+    supplied soil polygons (bbox read), else STATSGO (disk-cached), else a
+    flagged provisional constant. Returns ``(Raster, source_label)`` — the
+    single KF entry point shared by prefire.run_unit and assess.run_observed.
+    """
+    from pathlib import Path
+
+    from pfdf.raster import Raster
+
+    from firescape import paths
+    from firescape.delineate import match_grid
+
+    if polygons is not None:
+        import geopandas as gpd
+
+        from firescape.statewide import bounds4326
+
+        try:  # bbox read: GPKG spatial index makes this cheap per call
+            b = dem.bounds
+            bb = bounds4326((b.left, b.bottom, b.right, b.top)
+                            if hasattr(b, "left") else tuple(b)[:4])
+            gdf = gpd.read_file(polygons, bbox=bb)
+        except Exception:
+            pkey = str(polygons)
+            if pkey not in _POLY_CACHE:
+                gdf = _POLY_CACHE[pkey] = __import__("geopandas").read_file(polygons)
+            else:
+                gdf = _POLY_CACHE[pkey]
+        if len(gdf):
+            return rasterize_kf(gdf, dem), f"ssurgo:{Path(polygons).name}"
+
+    cache = Path(cache_dir or paths.interim_dir("kf_cache")) / f"{key}_kf.tif"
+    if cache.exists():
+        return (match_grid(Raster.from_file(cache), dem, resampling="nearest"),
+                "statsgo-cached")
+    try:
+        kf = kf_factor(dem)
+        try:
+            kf.save(cache, overwrite=True)
+        except Exception:
+            pass
+        return match_grid(kf, dem, resampling="nearest"), "statsgo"
+    except Exception as e:  # ScienceBase outage -> provisional constant
+        arr = np.full(dem.shape, KF_FALLBACK, dtype="float32")
+        return (Raster.from_array(arr, spatial=dem, nodata=np.float32(np.nan)),
+                f"CONSTANT-{KF_FALLBACK}-PROVISIONAL ({type(e).__name__})")

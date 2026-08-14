@@ -35,6 +35,7 @@ def _git_sha() -> str | None:
 
 
 def run_observed(event_id: str, *, dem_path: Path | None = None, dem=None,
+                 kf_polygons: Path | None = None,
                  i15_mmh: float = I15_REFERENCE_MMH, out_dir: Path | None = None,
                  threshold_p: float = 0.5) -> dict:
     """Run the observed-severity hazard chain for one downloaded MTBS fire.
@@ -106,17 +107,11 @@ def run_observed(event_id: str, *, dem_path: Path | None = None, dem=None,
                 dem_conditioned=terr.conditioned, filters=filters)
     segments.locate_basins()
 
-    # --- soils (disk-cached: ScienceBase is intermittently unavailable) -----
-    kf_cache = paths.interim_dir("assess_cache", event_id.upper()) / "kf.tif"
-    if kf_cache.exists():
-        kf = Raster.from_file(kf_cache)
-    else:
-        kf = soils.kf_factor(dem)
-        try:
-            kf.save(kf_cache, overwrite=True)
-        except Exception:
-            pass
-    kf = match_grid(kf, dem, resampling="nearest")
+    # --- soils: shared fallback chain (polygons -> STATSGO cached -> const) -
+    kf, kf_source = soils.kf_raster(
+        dem, polygons=kf_polygons,
+        cache_dir=paths.interim_dir("assess_cache", event_id.upper()),
+        key=event_id.upper())
 
     # --- models -------------------------------------------------------------
     T, F, S = hz.m1_inputs(segments, barc4, terr.slopes, dnbr, kf, omitnan=True)
@@ -163,7 +158,8 @@ def run_observed(event_id: str, *, dem_path: Path | None = None, dem=None,
         "segments_initial": int(n0),
         "segments_kept": int(segments.size),
         "inputs": {k: str(v) for k, v in bundle.items()},
-        "dem": str(dem_path),
+        "dem": str(dem_path) if dem_path else "injected (statewide tile store)",
+        "kf_source": kf_source,
     }
     (out_dir / "run_meta.json").write_text(json.dumps(meta, indent=2) + "\n")
 
