@@ -34,10 +34,14 @@ def _git_sha() -> str | None:
         return None
 
 
-def run_observed(event_id: str, *, dem_path: Path | None = None,
+def run_observed(event_id: str, *, dem_path: Path | None = None, dem=None,
                  i15_mmh: float = I15_REFERENCE_MMH, out_dir: Path | None = None,
                  threshold_p: float = 0.5) -> dict:
     """Run the observed-severity hazard chain for one downloaded MTBS fire.
+
+    ``dem`` injects a pre-built pfdf Raster covering the perimeter plus
+    ``PERIMETER_BUFFER_M`` (the statewide tile-store seam, mirror of
+    prefire.run_unit); ``dem_path`` remains the pilot route.
 
     Returns a dict with the Segments object, per-segment arrays, and paths of
     everything written.
@@ -48,15 +52,18 @@ def run_observed(event_id: str, *, dem_path: Path | None = None,
 
     filters = FilterDefaults()
     bundle = mtbs.fire_bundle(event_id)
-    dem_path = Path(dem_path) if dem_path else paths.interim_dir("pilot") / "pilot_dem.tif"
     out_dir = Path(out_dir) if out_dir else paths.products_dir("assess", event_id.upper())
 
     # --- domain: burn perimeter (+buffer) on the DEM grid -------------------
     perim_gdf = gpd.read_file(bundle["burn_area"])
     import rasterio
 
-    with rasterio.open(dem_path) as src:
-        dem_crs = src.crs
+    if dem is None:
+        dem_path = Path(dem_path) if dem_path else paths.interim_dir("pilot") / "pilot_dem.tif"
+        with rasterio.open(dem_path) as src:
+            dem_crs = src.crs
+    else:
+        dem_crs = dem.crs
     perim_gdf = perim_gdf.to_crs(dem_crs)
     domain_gdf = gpd.GeoDataFrame(geometry=[perim_gdf.union_all().buffer(PERIMETER_BUFFER_M)],
                                   crs=dem_crs)
@@ -64,7 +71,8 @@ def run_observed(event_id: str, *, dem_path: Path | None = None,
     from pfdf.projection import BoundingBox
 
     w, s, e, n = domain_gdf.total_bounds
-    dem = Raster.from_file(dem_path, bounds=BoundingBox(w, s, e, n, crs=dem_crs))
+    if dem is None:
+        dem = Raster.from_file(dem_path, bounds=BoundingBox(w, s, e, n, crs=dem_crs))
     try:
         res = dem.resolution(units="meters")
     except TypeError:
