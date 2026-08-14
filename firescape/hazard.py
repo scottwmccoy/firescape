@@ -91,3 +91,61 @@ def logistic_m1_reference(T, F, S, R_mm):
     c = M1_15MIN
     X = c["B"] + (c["Ct"] * T + c["Cf"] * F + c["Cs"] * S) * R_mm
     return 1.0 / (1.0 + np.exp(-X))
+
+
+# ---------------------------------------------------------------------------
+# RANGES volume model (McCoy group, Volume Playground project, 2026)
+#
+# Adopted 5-variable ln-volume regression, refit on all 227 events of the
+# Gorr et al. (2026) inventory (34 fires, AZ/CA/CO/NM/UT/WA):
+#   ln V = 4.79 + 1.052 ln Area + 1.376 ln Slope + 0.610 ln(i15 ratio)
+#          + 0.476 ln PGA - 1.388 frac_north
+# By-fire CV R^2 = 0.742 +/- 0.010, RMSE = 1.136 ln-units, 94.7% within one
+# order of magnitude (vs WEST 0.607/1.400). Source of record:
+# Volume_debrisFlows/McCoy_Volume_Playgroud/Topo_development_summary.md §6
+# (final_model_5var.py). Predictor conventions: Area km^2 (basin), Slope =
+# basin mean slope in DEGREES, i15 ratio = storm i15 / 1-yr-RI i15 (Gorr
+# anomaly; Atlas 14 supplies the denominator), PGA = USGS NSHM-2023 PGA
+# (2% in 50 yr, site class BC) averaged in a 25-km radius, frac_north =
+# basin fraction with aspect in [315, 45) deg from a 10 m DEM
+# (resolution-robust, 10 m vs 1 m r = 0.99).
+#
+# NOTE: no burn-severity term — severity was screened and rejected in that
+# project — so pre-fire volumes need no simulated severity. Caveats: no
+# Nevada fires in training; UT (n=3, nearest Great Basin analog) shows a
+# -1.03 mean OOF residual (model high by ~2.8x there).
+# ---------------------------------------------------------------------------
+
+RANGES_COEF = {
+    "intercept": 4.79,
+    "ln_area": 1.052,
+    "ln_slope": 1.376,
+    "ln_i15_ratio": 0.610,
+    "ln_pga": 0.476,
+    "frac_north": -1.388,
+}
+RANGES_RMSE_LN = 1.136
+
+
+def volume_ranges(area_km2, slope_deg, i15_ratio, pga_g, frac_north):
+    """RANGES debris-flow volume (m^3) with +/- one-RMSE ln-space bounds.
+
+    Inputs are basin arrays (see coefficient block for conventions). Any
+    nonpositive Area/Slope/ratio/PGA yields NaN. Returns (V, Vmin, Vmax).
+    """
+    area = np.asarray(area_km2, dtype=float)
+    slope = np.asarray(slope_deg, dtype=float)
+    ratio = np.asarray(i15_ratio, dtype=float)
+    pga = np.asarray(pga_g, dtype=float)
+    fn = np.asarray(frac_north, dtype=float)
+    ok = (area > 0) & (slope > 0) & (ratio > 0) & (pga > 0) & np.isfinite(fn)
+    with np.errstate(all="ignore"):
+        lnv = (RANGES_COEF["intercept"]
+               + RANGES_COEF["ln_area"] * np.log(area)
+               + RANGES_COEF["ln_slope"] * np.log(slope)
+               + RANGES_COEF["ln_i15_ratio"] * np.log(ratio)
+               + RANGES_COEF["ln_pga"] * np.log(pga)
+               + RANGES_COEF["frac_north"] * fn)
+    lnv = np.where(ok, lnv, np.nan)
+    V = np.exp(lnv)
+    return V, V * np.exp(-RANGES_RMSE_LN), V * np.exp(RANGES_RMSE_LN)

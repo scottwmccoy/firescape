@@ -187,3 +187,35 @@ Meinshausen 2006, JMLR 7:983–999 (quantile regression forests) · Simafranca
 et al. 2024, Env Ecol Stat, doi:10.1007/s10651-024-00601-1 · Pascolini-
 Campbell et al. 2022, GEB, doi:10.1111/geb.13526 · Wildfire Risk to
 Communities (FSim conditional flame length): fs.usda.gov RDS-2016-0034-3.
+
+---
+
+## Addendum (2026-08-13 evening): distributional severity + RANGES, executed
+
+**Option 4 (distributional sampling) is implemented and validated.** The
+dispersed-quantile model q = Phi(Phi^-1(P_dsim) + eps), eps ~ N(0, sigma^2)
+has a *measured* sigma_z = 0.91 (within fire-x-class probit-quantile sd,
+2.0M era-matched pixels) and its analytic per-class exceedance reproduces
+observed break exceedance at r = 0.995 / MAE 0.020 over 164 fire-x-class
+cells (`products/calibration/severity_dispersion.json`). On 12 units across
+all four regions, dispersion dissolves the v1 zero-volume collapse
+(Gartner zero-volume 50-98% -> 0% everywhere) while preserving calibrated
+likelihood (max median-P shift 0.022). `severity.class_exceedance` /
+`expected_dnbr` keep the calibration class decomposition exact in
+expectation; `simulate_dnbr_field` provides correlated realizations.
+
+**Volume: RANGES replaces the planned WEST evaluation** (user decision).
+The Volume Playground 5-variable model (ln V = 4.79 + 1.052 lnArea +
+1.376 lnSlope + 0.610 ln i15-ratio + 0.476 lnPGA - 1.388 frac_north;
+by-fire CV R^2 0.742, RMSE 1.136 vs WEST 0.607/1.400) is implemented as
+`hazard.volume_ranges` and applied statewide: zero-volume 93.0% -> 1.7%,
+severity-free by construction, hazard recomposition 30,972 moderate / 3
+high. Caveats carried in the product summary: no Nevada fires in training,
+UT (n=3) overpredicted ~2.8x.
+
+**Updated ladder**: B2 (per-region Weibull) shipped as statewide_v1; B2.5
+= dispersed severity (sigma measured, validated, unit-tested) + RANGES
+volume is the v1.1 candidate — promotion requires recalibrating P_dsim
+under the dispersed simulator (exceedance curves shift slightly) and a
+soft-mode run_unit fleet. B4 (QRF covariate-conditioned quantiles) remains
+the research track; its null probe result stands.
