@@ -66,6 +66,11 @@ class PreFireConfig:
     cdf_table: str = "staley2018"
     #: pre-fetched soil polygons with a ``kf`` column; used instead of STATSGO
     kf_polygons: Path | None = None
+    #: dispersed-quantile severity closure (None = deterministic). The
+    #: measured value is severity.SIGMA_Z_DEFAULT = 0.91.
+    severity_sigma: float | None = None
+    #: emit per-basin SlopeDeg/FracNorth (RANGES volume predictors)
+    emit_ranges_topo: bool = False
 
 
 def _kf_raster(dem, cfg: PreFireConfig, unit_key: str):
@@ -177,6 +182,69 @@ def run_unit(unit_geom, cfg: PreFireConfig, *, unit_key: str, crs=None,
     hclass = hz.combined_c10(p, V)
     thresh = hz.threshold_i15(T, F, S, p=cfg.threshold_p)
 
+    severity_mode = "deterministic"
+    if cfg.severity_sigma:
+        # Dispersed-quantile closure: per-class break-exceedance probability
+        # and expected dNBR replace the 0/1 indicator and the constant class
+        # value (severity.class_exceedance/expected_dnbr; sigma measured from
+        # observed severity). S is severity-independent and keeps the
+        # M1.variables value from above; T/F/Bmh become expectations via the
+        # same class decomposition the calibration validates exactly.
+        import pandas as pd
+
+        from firescape.calibrate import STEEP_GRADIENT
+
+        severity_mode = f"dispersed(sigma={cfg.severity_sigma})"
+        vals = np.where(domain.values, evt_values, -1)
+        classes = [int(c) for c in np.unique(vals) if c > 0]
+        fbcode = severity.BARREN_EVT_CODE
+        lam = cdf["Weibull_Lambda_Scale"].reindex(classes).fillna(
+            cdf.at[fbcode, "Weibull_Lambda_Scale"]).to_numpy(float)
+        kap = cdf["Weibull_Kappa_Shape"].reindex(classes).fillna(
+            cdf.at[fbcode, "Weibull_Kappa_Shape"]).to_numpy(float)
+        tab = pd.DataFrame({"Weibull_Lambda_Scale": lam,
+                            "Weibull_Kappa_Shape": kap}, index=classes)
+        p_c = severity.class_exceedance(classes, cfg.barc_breaks[1], cfg.pdsim,
+                                        tab, sigma=cfg.severity_sigma)
+        e_c = severity.expected_dnbr(classes, cfg.pdsim, tab,
+                                     sigma=cfg.severity_sigma)
+        steep = terr.slopes.values >= STEEP_GRADIENT
+        W = np.zeros((segments.size, len(classes)))
+        Ws = np.zeros_like(W)
+        for j, c in enumerate(classes):
+            in_c = vals == c
+            W[:, j] = np.asarray(segments.catchment_ratio(
+                Raster.from_array(in_c, spatial=dem, isbool=True)), float)
+            Ws[:, j] = np.asarray(segments.catchment_ratio(
+                Raster.from_array(in_c & steep, spatial=dem, isbool=True)),
+                float)
+        T = Ws @ p_c
+        F = W @ e_c / 1000.0
+        p = hz.likelihood_m1(T, F, S, i15_mmh=cfg.i15_mmh)
+        bmh = (np.asarray(segments.area(units="kilometers"), dtype=float)
+               * (W @ p_c))
+        V, Vmin, Vmax = hz.volume_g14(bmh, relief, i15_mmh=cfg.i15_mmh)
+        hclass = hz.combined_c10(p, V)
+        thresh = hz.threshold_i15(T, F, S, p=cfg.threshold_p)
+
+    ranges_topo = {}
+    if cfg.emit_ranges_topo:
+        # RANGES volume predictors, computed on the unit DEM at native res
+        try:
+            dx, dy = float(res[0]), float(res[1])
+        except (TypeError, IndexError):
+            dx = dy = float(res)
+        z = np.asarray(dem.values, dtype="float64")
+        gr, gc = np.gradient(z, dy, dx)
+        sdeg = np.degrees(np.arctan(np.hypot(gr, gc))).astype("float32")
+        aspect = np.degrees(np.arctan2(-gc, gr)) % 360.0
+        north = (aspect >= 315.0) | (aspect < 45.0)
+        ranges_topo["SlopeDeg"] = np.asarray(segments.catchment_summary(
+            "mean", Raster.from_array(sdeg, spatial=dem,
+                                      nodata=np.float32(np.nan))), float)
+        ranges_topo["FracNorth"] = np.asarray(segments.catchment_ratio(
+            Raster.from_array(north, spatial=dem, isbool=True)), float)
+
     tag = f"{int(round(cfg.i15_mmh))}mmh"
     props = {
         "Segment_ID": segments.ids.astype(float),
@@ -193,11 +261,14 @@ def run_unit(unit_geom, cfg: PreFireConfig, *, unit_key: str, crs=None,
         f"H_{tag}": np.asarray(hclass, dtype=float),
         f"I15_{int(cfg.threshold_p * 100)}": np.asarray(thresh, dtype=float),
     }
+    for k, v in ranges_topo.items():
+        props[k] = v
     meta = {
         "unit_key": unit_key,
         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "region": cfg.region,
         "pdsim": cfg.pdsim,
+        "severity_mode": severity_mode,
         "cdf_table": cfg.cdf_table,
         "barc_breaks": list(cfg.barc_breaks),
         "i15_mmh": cfg.i15_mmh,
