@@ -299,3 +299,133 @@ def coverage_report(evt: np.ndarray, cdf_table: pd.DataFrame | None = None) -> p
         cdf_table[["CLASSNAME"]], left_on="EVT_Code", right_index=True, how="left"
     )
     return rep.sort_values("n_pixels", ascending=False, ignore_index=True)
+
+
+# ---------------------------------------------------------------------------
+# Distributional severity (v1.1 experiment, 2026-08-13)
+#
+# The Rossi/Staley simulator assigns every pixel of a class the SAME quantile
+# P_dsim, so a class is entirely above or below a BARC break. Real fires
+# spread pixels across the class CDF: probit-quantile dispersion measured
+# from the 2.0M-px era-matched sample is sigma_z ~ 0.91 (products/
+# calibration/severity_dispersion.json; analytic exceedance validates at
+# r = 0.995). Model: q_i = Phi(Phi^-1(P) + eps_i), eps ~ N(0, sigma^2),
+# spatially correlated. Expectations are analytic per class, so the class
+# decomposition stays exact.
+# ---------------------------------------------------------------------------
+
+SIGMA_Z_DEFAULT = 0.91
+
+
+def _norm_cdf(x):
+    from scipy.special import ndtr
+
+    return ndtr(x)
+
+
+def _norm_ppf(x):
+    from scipy.special import ndtri
+
+    return ndtri(np.clip(x, 1e-12, 1 - 1e-12))
+
+
+def class_exceedance(codes, threshold: float, pdsim: float,
+                     cdf_table=None, *, sigma: float = SIGMA_Z_DEFAULT):
+    """P(dNBR >= threshold) per class under the dispersed-quantile model.
+
+    Returns an array aligned with ``codes``; classes missing from the table
+    get NaN (caller applies the fallback). sigma=0 reduces to the
+    deterministic 0/1 indicator.
+    """
+    if cdf_table is None:
+        cdf_table = load_cdf_table()
+    codes = np.asarray(codes)
+    lam = cdf_table["Weibull_Lambda_Scale"].reindex(codes).to_numpy(float)
+    kap = cdf_table["Weibull_Kappa_Shape"].reindex(codes).to_numpy(float)
+    zthr = (threshold + 1000.0) / 2000.0
+    with np.errstate(all="ignore"):
+        qB = 1.0 - np.exp(-np.power(zthr / lam, kap))
+    z0 = _norm_ppf(pdsim)
+    if sigma <= 0:
+        return np.where(np.isfinite(lam), (z0 >= _norm_ppf(qB)) * 1.0, np.nan)
+    return np.where(np.isfinite(lam),
+                    1.0 - _norm_cdf((_norm_ppf(qB) - z0) / sigma), np.nan)
+
+
+def expected_dnbr(codes, pdsim: float, cdf_table=None, *,
+                  sigma: float = SIGMA_Z_DEFAULT, n_nodes: int = 61):
+    """E[dNBR] per class under the dispersed-quantile model (Gauss-Legendre
+    over the probit shift). sigma=0 reduces to weibull_dnbr at pdsim."""
+    if cdf_table is None:
+        cdf_table = load_cdf_table()
+    codes = np.asarray(codes)
+    lam = cdf_table["Weibull_Lambda_Scale"].reindex(codes).to_numpy(float)
+    kap = cdf_table["Weibull_Kappa_Shape"].reindex(codes).to_numpy(float)
+    if sigma <= 0:
+        with np.errstate(all="ignore"):
+            return weibull_dnbr(pdsim, lam, kap)
+    from numpy.polynomial.hermite_e import hermegauss
+
+    x, w = hermegauss(n_nodes)              # e^{-x^2/2} weight
+    w = w / np.sqrt(2.0 * np.pi)
+    # clip: far-tail nodes reach q -> 1 where -log(1-q) diverges; their
+    # quadrature weight is ~e^-50, so the clip changes nothing finite
+    q = np.clip(_norm_cdf(_norm_ppf(pdsim) + sigma * x), 1e-12, 1 - 1e-12)
+    with np.errstate(all="ignore"):
+        d = (lam[:, None] * np.power(-np.log(1.0 - q[None, :]),
+                                     1.0 / kap[:, None])) * 2000.0 - 1000.0
+    return d @ w
+
+
+def sample_quantile_field(shape, pdsim: float, *, sigma: float = SIGMA_Z_DEFAULT,
+                          corr_px: float = 10.0, rng=None):
+    """A spatially correlated quantile field q = Phi(Phi^-1(P) + eps).
+
+    eps is unit-variance Gaussian noise smoothed to an e-folding scale of
+    ``corr_px`` pixels then rescaled to sd ``sigma`` — patch structure for
+    realization studies; expectations never need it.
+    """
+    from scipy.ndimage import gaussian_filter
+
+    rng = np.random.default_rng(rng)
+    z = rng.standard_normal(shape)
+    if corr_px > 0:
+        z = gaussian_filter(z, corr_px, mode="reflect")
+        z = z / max(z.std(), 1e-9)
+    return _norm_cdf(_norm_ppf(pdsim) + sigma * z)
+
+
+def simulate_dnbr_field(evt, pdsim: float, cdf_table=None, *,
+                        sigma: float = SIGMA_Z_DEFAULT, corr_px: float = 10.0,
+                        rng=None, fallback_code: int | None = BARREN_EVT_CODE,
+                        evt_nodata: int | None = None):
+    """One stochastic dNBR realization: per-pixel class inverse-CDF at a
+    correlated quantile field. Returns (dnbr float32, src uint8) exactly like
+    simulate_dnbr; sigma=0, any corr reproduces simulate_dnbr."""
+    if cdf_table is None:
+        cdf_table = load_cdf_table()
+    evt = np.asarray(evt)
+    q = sample_quantile_field(evt.shape, pdsim, sigma=sigma, corr_px=corr_px,
+                              rng=rng)
+    codes, inverse = np.unique(evt, return_inverse=True)
+    lam = cdf_table["Weibull_Lambda_Scale"].reindex(codes).to_numpy(float)
+    kap = cdf_table["Weibull_Kappa_Shape"].reindex(codes).to_numpy(float)
+    src_codes = np.where(np.isfinite(lam), SRC_DIRECT, SRC_NODATA).astype(np.uint8)
+    if fallback_code is not None:
+        fb_lam = float(cdf_table.at[fallback_code, "Weibull_Lambda_Scale"])
+        fb_kap = float(cdf_table.at[fallback_code, "Weibull_Kappa_Shape"])
+        missing = ~np.isfinite(lam)
+        lam = np.where(missing, fb_lam, lam)
+        kap = np.where(missing, fb_kap, kap)
+        src_codes = np.where(missing, SRC_FALLBACK, src_codes).astype(np.uint8)
+    if evt_nodata is not None:
+        lam[codes == evt_nodata] = np.nan
+        src_codes[codes == evt_nodata] = SRC_NODATA
+    lam_px = lam[inverse].reshape(evt.shape)
+    kap_px = kap[inverse].reshape(evt.shape)
+    with np.errstate(all="ignore"):
+        dnbr = (lam_px * np.power(-np.log(1.0 - q), 1.0 / kap_px)) * 2000.0 - 1000.0
+    dnbr = dnbr.astype(np.float32)
+    src = src_codes[inverse].reshape(evt.shape)
+    dnbr[src == SRC_NODATA] = np.nan
+    return dnbr, src

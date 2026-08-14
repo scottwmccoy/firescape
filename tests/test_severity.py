@@ -129,3 +129,58 @@ class TestCoverageReport:
         assert bool(row.at[1234, "has_params"]) is False
         missing_frac = rep.loc[~rep["has_params"], "fraction"].sum()
         assert missing_frac == pytest.approx(2 / 9)
+
+
+class TestDistributionalSeverity:
+    def test_sigma_zero_reduces_to_deterministic(self, mini_cdf):
+        import numpy as np
+
+        from firescape import severity
+
+        codes = np.array(mini_cdf.index[:2])
+        det = severity.weibull_dnbr(
+            0.5, mini_cdf.loc[codes, "Weibull_Lambda_Scale"].to_numpy(),
+            mini_cdf.loc[codes, "Weibull_Kappa_Shape"].to_numpy())
+        soft = severity.expected_dnbr(codes, 0.5, mini_cdf, sigma=0.0)
+        assert np.allclose(det, soft)
+        exc = severity.class_exceedance(codes, float(det[0]) - 1.0, 0.5,
+                                        mini_cdf, sigma=0.0)
+        assert exc[0] == 1.0
+
+    def test_exceedance_matches_monte_carlo(self, mini_cdf):
+        import numpy as np
+        from scipy.stats import norm
+
+        from firescape import severity
+
+        code = int(mini_cdf.index[0])
+        lam = float(mini_cdf.at[code, "Weibull_Lambda_Scale"])
+        kap = float(mini_cdf.at[code, "Weibull_Kappa_Shape"])
+        rng = np.random.default_rng(3)
+        q = norm.cdf(norm.ppf(0.5) + 0.9 * rng.standard_normal(200_000))
+        d = (lam * (-np.log(1 - q)) ** (1 / kap)) * 2000 - 1000
+        thr = float(np.median(d))
+        mc = float((d >= thr).mean())
+        an = float(severity.class_exceedance([code], thr, 0.5, mini_cdf,
+                                             sigma=0.9)[0])
+        assert abs(mc - an) < 0.01
+        mc_mean = float(d.mean())
+        an_mean = float(severity.expected_dnbr([code], 0.5, mini_cdf,
+                                               sigma=0.9)[0])
+        assert abs(mc_mean - an_mean) < 5.0
+
+    def test_field_reduces_and_disperses(self, mini_cdf):
+        import numpy as np
+
+        from firescape import severity
+
+        code = int(mini_cdf.index[0])
+        evt = np.full((60, 60), code)
+        d0, s0 = severity.simulate_dnbr_field(evt, 0.5, mini_cdf, sigma=0.0,
+                                              rng=1)
+        det, _ = severity.simulate_dnbr(evt, 0.5, mini_cdf)
+        assert np.allclose(d0, det, atol=0.5)
+        d1, _ = severity.simulate_dnbr_field(evt, 0.5, mini_cdf, sigma=0.9,
+                                             corr_px=3, rng=1)
+        assert d1.std() > 50.0
+        assert (s0 == severity.SRC_DIRECT).all()
