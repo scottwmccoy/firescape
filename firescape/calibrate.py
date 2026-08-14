@@ -90,6 +90,26 @@ def load_cached(event_id: str, tag: str = "", table: str = "") -> FireCalib | No
                      cache_dir=d)
 
 
+def _find_decomp(event_id: str, tag: str):
+    """Locate a saved class-decomposition for this fire + EVT vintage.
+
+    The decomposition (W, Ws, observed T/F, selection) is independent of the
+    CDF table, the regional break, and the dispersion sigma — any sibling
+    cache whose tag shares the vintage token (tag's first "_" field) can seed
+    an instant re-solve; no raster work is repeated.
+    """
+    base = paths.interim_dir("calib")
+    exact = _cache_dir(event_id, tag) / "decomp.npz"
+    if exact.exists():
+        return exact
+    prefix = (tag.split("_")[0] + "_") if tag else ""
+    for d in sorted(base.glob(f"{event_id.upper()}__{prefix}*")):
+        f = d / "decomp.npz"
+        if f.exists():
+            return f
+    return None
+
+
 def fire_calibration(event_id: str, thresholds: tuple[float, float],
                      regional_break: float, *, evt_path: Path | None = None,
                      crosswalk: dict[int, int], dem_path: Path | None = None,
@@ -132,66 +152,9 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
 
     low_t, mod_t = thresholds
     cache = _cache_dir(event_id, tag)
-    bundle = mtbs.fire_bundle(event_id)
-    if dem is None:
-        dem_path = Path(dem_path) if dem_path else paths.interim_dir("pilot") / "pilot_dem.tif"
-        with rasterio.open(dem_path) as src:
-            dem_crs = src.crs
-        perim_gdf = gpd.read_file(bundle["burn_area"]).to_crs(dem_crs)
-        w, s, e, n = perim_gdf.union_all().buffer(PERIMETER_BUFFER_M).bounds
-        dem = Raster.from_file(dem_path, bounds=BoundingBox(w, s, e, n, crs=dem_crs))
-    else:
-        dem_crs = dem.crs
-        perim_gdf = gpd.read_file(bundle["burn_area"]).to_crs(dem_crs)
-    res = dem.resolution("meters")
-    perim = match_grid(Raster.from_polygons(bundle["burn_area"], bounds=dem, resolution=res), dem)
-    perim_arr = perim.values.astype(bool)
-
-    # domain = buffered perimeter: rasterize the buffered geometry
-    dom_path = cache / "_domain.geojson"
-    cache.mkdir(parents=True, exist_ok=True)
-    gpd.GeoDataFrame(geometry=[perim_gdf.union_all().buffer(PERIMETER_BUFFER_M)],
-                     crs=dem_crs).to_file(dom_path, driver="GeoJSON")
-    domain = match_grid(Raster.from_polygons(dom_path, bounds=dem, resolution=res), dem)
-
-    segments, terr = network(dem, domain)
-    n0 = segments.size
-
-    # ---- observed side ------------------------------------------------------
-    dnbr = match_grid(Raster.from_file(bundle["dnbr"]), dem, resampling="bilinear")
-    if "dnbr6" in bundle:
-        dnbr6 = match_grid(Raster.from_file(bundle["dnbr6"]), dem, resampling="nearest")
-        barc4_arr = mtbs.dnbr6_to_barc4(dnbr6.values)
-    else:
-        barc4_arr = pfsev.estimate(dnbr).values.astype(np.uint8)
-    barc4 = Raster.from_array(barc4_arr, spatial=dem, nodata=0)
-    modhigh = pfsev.mask(barc4, ["moderate", "high"])
-    kf_dummy = Raster.from_array(np.full(dem.shape, 0.25, dtype="float32"),
-                                 spatial=dem, nodata=np.float32(np.nan))
-    T_obs, F_obs, _ = s17.M1.variables(segments, modhigh, terr.slopes, dnbr, kf_dummy,
-                                       omitnan=True)
-
-    # ---- selection ----------------------------------------------------------
-    area = np.asarray(segments.area(units="kilometers"), dtype=float)
-    ratio_in = np.asarray(segments.catchment_ratio(perim), dtype=float)
-    try:
-        med_dnbr = np.asarray(segments.catchment_summary("median", dnbr), dtype=float)
-    except Exception:
-        med_dnbr = np.asarray(segments.scaled_dnbr(dnbr), dtype=float) * 1000.0  # mean fallback
-    sel = ((area <= FilterDefaults().max_area_km2) & (ratio_in >= 0.75)
-           & (med_dnbr >= low_t) & np.isfinite(T_obs) & np.isfinite(F_obs))
-
-    # ---- simulated side: class decomposition -------------------------------
-    if evt is None:
-        if evt_path is None:
-            raise ValueError("pass either evt= (Raster) or evt_path=")
-        evt = Raster.from_file(evt_path, bounds=dem.bounds)
-    evt = match_grid(evt, dem, resampling="nearest")
-    evt_vals = severity.apply_crosswalk(evt.values, crosswalk)
-    evt_vals = np.where(perim_arr, evt_vals, OUTSIDE_CODE)
     tables = dict(cdf_tables) if multi else {"default": severity.load_cdf_table()}
     cdf = next(iter(tables.values()))
-    classes = [int(c) for c in np.unique(evt_vals) if c != OUTSIDE_CODE]
+    classes: list[int] = []
 
     def _params(table):
         lam = np.array([table["Weibull_Lambda_Scale"].get(c, np.nan) for c in classes])
@@ -201,38 +164,129 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
         return (np.where(np.isfinite(lam), lam, fb_lam),
                 np.where(np.isfinite(kap), kap, fb_kap))
 
+    dec = _find_decomp(event_id, tag)
+    if dec is None:
+        bundle = mtbs.fire_bundle(event_id)
+        if dem is None:
+            dem_path = Path(dem_path) if dem_path else paths.interim_dir("pilot") / "pilot_dem.tif"
+            with rasterio.open(dem_path) as src:
+                dem_crs = src.crs
+            perim_gdf = gpd.read_file(bundle["burn_area"]).to_crs(dem_crs)
+            w, s, e, n = perim_gdf.union_all().buffer(PERIMETER_BUFFER_M).bounds
+            dem = Raster.from_file(dem_path, bounds=BoundingBox(w, s, e, n, crs=dem_crs))
+        else:
+            dem_crs = dem.crs
+            perim_gdf = gpd.read_file(bundle["burn_area"]).to_crs(dem_crs)
+        res = dem.resolution("meters")
+        perim = match_grid(Raster.from_polygons(bundle["burn_area"], bounds=dem, resolution=res), dem)
+        perim_arr = perim.values.astype(bool)
+
+        # domain = buffered perimeter: rasterize the buffered geometry
+        dom_path = cache / "_domain.geojson"
+        cache.mkdir(parents=True, exist_ok=True)
+        gpd.GeoDataFrame(geometry=[perim_gdf.union_all().buffer(PERIMETER_BUFFER_M)],
+                         crs=dem_crs).to_file(dom_path, driver="GeoJSON")
+        domain = match_grid(Raster.from_polygons(dom_path, bounds=dem, resolution=res), dem)
+
+        segments, terr = network(dem, domain)
+        n0 = segments.size
+
+        # ---- observed side ------------------------------------------------------
+        dnbr = match_grid(Raster.from_file(bundle["dnbr"]), dem, resampling="bilinear")
+        if "dnbr6" in bundle:
+            dnbr6 = match_grid(Raster.from_file(bundle["dnbr6"]), dem, resampling="nearest")
+            barc4_arr = mtbs.dnbr6_to_barc4(dnbr6.values)
+        else:
+            barc4_arr = pfsev.estimate(dnbr).values.astype(np.uint8)
+        barc4 = Raster.from_array(barc4_arr, spatial=dem, nodata=0)
+        modhigh = pfsev.mask(barc4, ["moderate", "high"])
+        kf_dummy = Raster.from_array(np.full(dem.shape, 0.25, dtype="float32"),
+                                     spatial=dem, nodata=np.float32(np.nan))
+        T_obs, F_obs, _ = s17.M1.variables(segments, modhigh, terr.slopes, dnbr, kf_dummy,
+                                           omitnan=True)
+
+        # ---- selection ----------------------------------------------------------
+        area = np.asarray(segments.area(units="kilometers"), dtype=float)
+        ratio_in = np.asarray(segments.catchment_ratio(perim), dtype=float)
+        try:
+            med_dnbr = np.asarray(segments.catchment_summary("median", dnbr), dtype=float)
+        except Exception:
+            med_dnbr = np.asarray(segments.scaled_dnbr(dnbr), dtype=float) * 1000.0  # mean fallback
+        sel = ((area <= FilterDefaults().max_area_km2) & (ratio_in >= 0.75)
+               & (med_dnbr >= low_t) & np.isfinite(T_obs) & np.isfinite(F_obs))
+
+        # ---- simulated side: class decomposition -------------------------------
+        if evt is None:
+            if evt_path is None:
+                raise ValueError("pass either evt= (Raster) or evt_path=")
+            evt = Raster.from_file(evt_path, bounds=dem.bounds)
+        evt = match_grid(evt, dem, resampling="nearest")
+        evt_vals = severity.apply_crosswalk(evt.values, crosswalk)
+        evt_vals = np.where(perim_arr, evt_vals, OUTSIDE_CODE)
+        classes = [int(c) for c in np.unique(evt_vals) if c != OUTSIDE_CODE]
+
+        lam, kap = _params(cdf)
+
+        steep = terr.slopes.values >= STEEP_GRADIENT
+        W = np.zeros((segments.size, len(classes)))
+        Ws = np.zeros_like(W)
+        for j, c in enumerate(classes):
+            in_c = evt_vals == c
+            W[:, j] = np.asarray(segments.catchment_ratio(
+                Raster.from_array(in_c, spatial=dem, isbool=True)), dtype=float)
+            Ws[:, j] = np.asarray(segments.catchment_ratio(
+                Raster.from_array(in_c & steep, spatial=dem, isbool=True)), dtype=float)
+
+        D = severity.weibull_dnbr(PDSIM_GRID[:, None], lam[None, :], kap[None, :])  # [nP, nc]
+        F_sim = (W @ D.T) / 1000.0                         # [nb, nP]
+        hot = D >= regional_break                          # [nP, nc]
+        T_sim = Ws @ hot.T.astype(float)                   # [nb, nP]
+
+        # ---- decomposition validation at P=0.5 ---------------------------------
+        k = int(np.argmin(np.abs(PDSIM_GRID - 0.5)))
+        sim_dnbr05, _src = severity.simulate_dnbr(evt_vals, 0.5, cdf, evt_nodata=OUTSIDE_CODE)
+        sim_dnbr05 = np.where(perim_arr, sim_dnbr05, 0.0).astype(np.float32)
+        barc05 = severity.classify_barc4(sim_dnbr05, (low_t if 0 < low_t < mod_t else 125.0,
+                                                      regional_break, 5000.0))
+        barc05[~perim_arr] = 1
+        Tv, Fv, _ = s17.M1.variables(
+            segments,
+            pfsev.mask(Raster.from_array(barc05, spatial=dem, nodata=0), ["moderate", "high"]),
+            terr.slopes,
+            Raster.from_array(sim_dnbr05, spatial=dem, nodata=np.float32(np.nan)),
+            kf_dummy, omitnan=True)
+        dT = float(np.nanmax(np.abs(np.asarray(Tv) - T_sim[:, k])))
+        dF = float(np.nanmax(np.abs(np.asarray(Fv) - F_sim[:, k])))
+        ids = np.asarray(segments.ids)
+        np.savez_compressed(
+            cache / "decomp.npz", W=W.astype(np.float32),
+            Ws=Ws.astype(np.float32),
+            classes=np.asarray(classes, dtype=np.int32), ids=ids,
+            T_obs=np.asarray(T_obs, dtype=float),
+            F_obs=np.asarray(F_obs, dtype=float), sel=sel, area=area,
+            ratio_in=ratio_in, med_dnbr=med_dnbr, n0=n0,
+            validation_dT=dT, validation_dF=dF)
+    else:
+        # instant re-solve: reuse the cached decomposition (no raster work)
+        z = np.load(dec)
+        W, Ws = z["W"].astype(float), z["Ws"].astype(float)
+        classes = [int(c) for c in z["classes"]]
+        ids = z["ids"]
+        T_obs, F_obs = z["T_obs"], z["F_obs"]
+        sel = z["sel"].astype(bool)
+        area, ratio_in, med_dnbr = z["area"], z["ratio_in"], z["med_dnbr"]
+        n0 = int(z["n0"])
+        dT, dF = float(z["validation_dT"]), float(z["validation_dF"])
+        if dec.parent != cache:
+            cache.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(cache / "decomp.npz",
+                                **{k: z[k] for k in z.files})
+
     lam, kap = _params(cdf)
-
-    steep = terr.slopes.values >= STEEP_GRADIENT
-    W = np.zeros((segments.size, len(classes)))
-    Ws = np.zeros_like(W)
-    for j, c in enumerate(classes):
-        in_c = evt_vals == c
-        W[:, j] = np.asarray(segments.catchment_ratio(
-            Raster.from_array(in_c, spatial=dem, isbool=True)), dtype=float)
-        Ws[:, j] = np.asarray(segments.catchment_ratio(
-            Raster.from_array(in_c & steep, spatial=dem, isbool=True)), dtype=float)
-
     D = severity.weibull_dnbr(PDSIM_GRID[:, None], lam[None, :], kap[None, :])  # [nP, nc]
     F_sim = (W @ D.T) / 1000.0                         # [nb, nP]
     hot = D >= regional_break                          # [nP, nc]
     T_sim = Ws @ hot.T.astype(float)                   # [nb, nP]
-
-    # ---- decomposition validation at P=0.5 ---------------------------------
-    k = int(np.argmin(np.abs(PDSIM_GRID - 0.5)))
-    sim_dnbr05, _src = severity.simulate_dnbr(evt_vals, 0.5, cdf, evt_nodata=OUTSIDE_CODE)
-    sim_dnbr05 = np.where(perim_arr, sim_dnbr05, 0.0).astype(np.float32)
-    barc05 = severity.classify_barc4(sim_dnbr05, (low_t if 0 < low_t < mod_t else 125.0,
-                                                  regional_break, 5000.0))
-    barc05[~perim_arr] = 1
-    Tv, Fv, _ = s17.M1.variables(
-        segments,
-        pfsev.mask(Raster.from_array(barc05, spatial=dem, nodata=0), ["moderate", "high"]),
-        terr.slopes,
-        Raster.from_array(sim_dnbr05, spatial=dem, nodata=np.float32(np.nan)),
-        kf_dummy, omitnan=True)
-    dT = float(np.nanmax(np.abs(np.asarray(Tv) - T_sim[:, k])))
-    dF = float(np.nanmax(np.abs(np.asarray(Fv) - F_sim[:, k])))
 
     # ---- best P per basin (logit space; S cancels) -------------------------
     B, Ct, Cf, Cs = s17.M1.parameters(durations=[15])
@@ -278,12 +332,13 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
             curves_extra[f"best_p_{name}_disp"] = bp_d
 
     # ---- cache --------------------------------------------------------------
+    cache.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
-        cache / "curves.npz", ids=segments.ids, T_obs=T_obs, F_obs=F_obs,
+        cache / "curves.npz", ids=ids, T_obs=T_obs, F_obs=F_obs,
         T_sim=T_sim.astype(np.float32), F_sim=F_sim.astype(np.float32),
         pdsim_grid=PDSIM_GRID, best_p=best_p, sel=sel, area=area,
         ratio_in=ratio_in, med_dnbr=med_dnbr, **curves_extra)
-    pd.DataFrame({"Segment_ID": segments.ids, "area_km2": area, "ratio_in": ratio_in,
+    pd.DataFrame({"Segment_ID": ids, "area_km2": area, "ratio_in": ratio_in,
                   "med_dnbr": med_dnbr, "T_obs": T_obs, "F_obs": F_obs,
                   "best_pdsim": best_p, "selected": sel}).to_parquet(cache / "basins.parquet")
     meta = {"event_id": event_id.upper(), "pdsim": fire_pdsim,
@@ -294,7 +349,9 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
             "low_t": float(low_t), "mod_t": float(mod_t),
             "regional_break": float(regional_break),
             "validation_dT": dT, "validation_dF": dF,
-            "severity_source": "dnbr6" if "dnbr6" in bundle else "estimate(dnbr)",
+            "severity_source": ("decomp-cache" if dec is not None else
+                                ("dnbr6" if "dnbr6" in bundle else "estimate(dnbr)")),
+            "solve_source": "decomp-cache" if dec is not None else "full",
             "solve_space": "logit (S cancels; KF-independent)"}
     (cache / "fire.json").write_text(json.dumps(meta, indent=2))
     if multi:
