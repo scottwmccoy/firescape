@@ -30,10 +30,13 @@ never written into this repo, Box, or figure metadata.
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
+
+from firescape import paths
 
 API = "https://api.planet.com"
 QUICK_SEARCH = f"{API}/data/v1/quick-search"
@@ -209,18 +212,40 @@ def search(aoi, start, end, *, item_type: str = "PSScene",
 
 
 # --------------------------------------------------------------------------- #
-# orders (payload construction only -- submission/download land with the
-# staging design; nothing here talks to the network)
+# screening (free -- scene clear_percent is SCENE-wide, not AOI-wide)
+# --------------------------------------------------------------------------- #
+def aoi_coverage(item_id: str, aoi, *, mode: str = "estimate",
+                 item_type: str = "PSScene", key: str | None = None) -> dict:
+    """AOI-specific usable-coverage estimate for one scene. Costs no quota.
+
+    ``mode="estimate"`` is synchronous (browse-image based); ``mode="udm2"``
+    is the accurate one but activates the udm2 server-side (poll: HTTP 202
+    means ask again in ~10 s). The request body is the bare geometry.
+    """
+    url = f"{API}/data/v1/item-types/{item_type}/items/{item_id}/coverage"
+    r = requests.post(url, params={"mode": mode}, auth=_auth(key),
+                      json={"geometry": _aoi_geom(aoi)}, timeout=60)
+    _raise_for_planet(r)
+    return r.json()
+
+
+# --------------------------------------------------------------------------- #
+# orders
 # --------------------------------------------------------------------------- #
 def order_request(name: str, item_ids: list[str], aoi, *,
                   bands: str = "4b", harmonize: bool = True,
                   item_type: str = "PSScene") -> dict:
-    """Orders-API payload: SR + udm2 bundle, clipped to the AOI.
+    """Orders-API payload: SR + udm2 bundle, clipped, harmonized, COG.
 
     ``harmonize=True`` adds Planet's harmonization tool (target Sentinel-2),
     which shrinks the cross-Dove radiometric scatter that forced us into
     multi-scene averaging in the first place -- leave it on for change
-    detection. Clipping keeps deliveries small and quota honest.
+    detection (PS2.SD/PSB.SD scenes only; do not mix PS2-era items in).
+    Clipping keeps deliveries small and quota honest (clip AOI: <=1500
+    vertices, no holes). ``file_format: COG`` makes Planet deliver tiled
+    LZW Cloud-Optimized GeoTIFFs with overviews -- viewer-ready, no local
+    conversion. Tool order here is cosmetic; the server applies its fixed
+    sequence (harmonize -> clip -> ... -> file_format) regardless.
     """
     if bands not in BUNDLES:
         raise PlanetError(f"bands must be one of {sorted(BUNDLES)}")
@@ -229,9 +254,141 @@ def order_request(name: str, item_ids: list[str], aoi, *,
     tools: list[dict] = [{"clip": {"aoi": _aoi_geom(aoi)}}]
     if harmonize:
         tools.append({"harmonize": {"target_sensor": "Sentinel-2"}})
+    tools.append({"file_format": {"format": "COG"}})
     return {
         "name": name,
         "products": [{"item_ids": list(item_ids), "item_type": item_type,
                       "product_bundle": BUNDLES[bands]}],
         "tools": tools,
     }
+
+
+def submit_order(request: dict, *, key: str | None = None) -> dict:
+    """POST an order; returns the order JSON (``id``, ``state``...).
+
+    This is the one call in the module that consumes quota. Search and
+    screen first; orders are charged per intersecting scene.
+    """
+    r = requests.post(ORDERS, auth=_auth(key), json=request, timeout=120)
+    _raise_for_planet(r)
+    return r.json()
+
+
+def order_state(order_id: str, *, key: str | None = None) -> dict:
+    r = requests.get(f"{ORDERS}/{order_id}", auth=_auth(key), timeout=60)
+    _raise_for_planet(r)
+    return r.json()
+
+
+def wait_order(order_id: str, *, poll: float = 60.0, timeout: float = 5400.0,
+               key: str | None = None) -> dict:
+    """Poll until the order reaches a terminal state.
+
+    Returns the final order JSON on ``success`` or ``partial`` (caller decides
+    whether partial is acceptable); raises on ``failed``/``cancelled`` or on
+    timeout. Poll the ORDER, never a log file -- lesson learned.
+    """
+    t0 = time.monotonic()
+    while True:
+        o = order_state(order_id, key=key)
+        state = o.get("state")
+        if state in ("success", "partial"):
+            return o
+        if state in ("failed", "cancelled"):
+            raise PlanetError(f"order {order_id} {state}: "
+                              f"{o.get('last_message', '')}")
+        if time.monotonic() - t0 > timeout:
+            raise PlanetError(f"order {order_id} still '{state}' after "
+                              f"{timeout:.0f}s")
+        time.sleep(poll)
+
+
+def download_order(order: dict | str, dest_dir: Path, *,
+                   key: str | None = None) -> list[Path]:
+    """Download every delivered file and verify it against ``manifest.json``.
+
+    File names in the delivery are prefixed ``<order-id>/``; that prefix is
+    stripped so paths on disk match the manifest's relative ``path`` entries.
+    Expired result URLs (orders sign them with ``expires_at``) get one
+    refresh via a re-fetch of the order. Raises on any checksum mismatch or
+    manifest entry with no file.
+    """
+    import hashlib
+    import json as _json
+
+    if isinstance(order, str):
+        order = order_state(order, key=key)
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    auth = _auth(key)
+
+    def _fetch(results):
+        out = []
+        for res in results:
+            rel = res["name"].split("/", 1)[1] if "/" in res["name"] \
+                else res["name"]
+            target = dest_dir / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            r = requests.get(res["location"], auth=auth, stream=True,
+                             timeout=600)
+            if r.status_code in (401, 403):
+                return None                     # URLs expired -- refresh
+            _raise_for_planet(r)
+            part = target.with_suffix(target.suffix + ".part")
+            with open(part, "wb") as fh:
+                for chunk in r.iter_content(1 << 20):
+                    fh.write(chunk)
+            part.rename(target)
+            out.append(target)
+        return out
+
+    got = _fetch(order["_links"]["results"])
+    if got is None:
+        order = order_state(order["id"], key=key)
+        got = _fetch(order["_links"]["results"])
+        if got is None:
+            raise PlanetError(f"order {order['id']}: result URLs expired "
+                              "twice; giving up")
+
+    manifest = next((p for p in got if p.name == "manifest.json"), None)
+    if manifest is None:
+        raise PlanetError("delivery contained no manifest.json")
+    listed = _json.loads(manifest.read_text())["files"]
+    for entry in listed:
+        f = dest_dir / entry["path"]
+        if not f.exists():
+            raise PlanetError(f"manifest lists {entry['path']} but it was "
+                              "not delivered")
+        want = entry["digests"]["sha256"]
+        have = hashlib.sha256(f.read_bytes()).hexdigest()
+        if have != want:
+            raise PlanetError(f"sha256 mismatch on {entry['path']}")
+    return got
+
+
+def stage_order(files: list[Path], aoi_name: str, epoch: str, *,
+                order_id: str, request: dict | None = None) -> Path:
+    """Atomic-move a verified delivery into Box ``raw/planet/<aoi>/<epoch>/``.
+
+    Every raster gets the house ``.provenance.json`` sidecar. Orders vanish
+    from Planet's listings after ~3 months, so the sidecar (order id, bundle,
+    tool chain, item ids) is the durable record of what was ordered.
+    """
+    dest = paths.raw_dir("planet", aoi_name, epoch)
+    prods = (request or {}).get("products", [{}])
+    meta = {
+        "order_id": order_id,
+        "bundle": prods[0].get("product_bundle"),
+        "item_ids": prods[0].get("item_ids"),
+        "tools": [list(t)[0] for t in (request or {}).get("tools", [])],
+    }
+    moved = []
+    for f in files:
+        out = paths.atomic_into(f, dest / f.name)
+        moved.append(out)
+        if out.suffix.lower() in (".tif", ".tiff"):
+            paths.write_provenance(
+                out, url=f"{ORDERS}/{order_id}",
+                note=f"Planet Orders API delivery for AOI '{aoi_name}', "
+                     f"epoch '{epoch}'", **meta)
+    return dest

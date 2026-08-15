@@ -136,10 +136,11 @@ def test_order_request_payload():
     (prod,) = req["products"]
     assert prod["item_ids"] == ["s1", "s2"]
     assert prod["product_bundle"] == "analytic_sr_udm2"
-    clip, harm = req["tools"]
+    clip, harm, fmt = req["tools"]
     ring = clip["clip"]["aoi"]["coordinates"][0]
     assert ring[0] == ring[-1]                          # closed ring
     assert harm == {"harmonize": {"target_sensor": "Sentinel-2"}}
+    assert fmt == {"file_format": {"format": "COG"}}
     assert json.dumps(req)                              # JSON-serialisable
 
 
@@ -147,8 +148,94 @@ def test_order_request_variants():
     req = ps.order_request("x", ["s1"], "hidden_valley",
                            bands="8b", harmonize=False)
     assert req["products"][0]["product_bundle"] == "analytic_8b_sr_udm2"
-    assert [list(t) for t in req["tools"]] == [["clip"]]
+    assert [list(t) for t in req["tools"]] == [["clip"], ["file_format"]]
     with pytest.raises(ps.PlanetError, match="bands"):
         ps.order_request("x", ["s1"], "hidden_valley", bands="12b")
     with pytest.raises(ps.PlanetError, match="item id"):
         ps.order_request("x", [], "hidden_valley")
+
+
+# --------------------------------------------------------------------------- #
+# order lifecycle (mocked)
+# --------------------------------------------------------------------------- #
+def test_wait_order_returns_on_success(monkeypatch):
+    states = iter(["queued", "running", "success"])
+    monkeypatch.setattr(ps, "order_state",
+                        lambda oid, key=None: {"id": oid,
+                                               "state": next(states)})
+    monkeypatch.setattr(ps.time, "sleep", lambda s: None)
+    assert ps.wait_order("o1", poll=0)["state"] == "success"
+
+
+def test_wait_order_raises_on_failure(monkeypatch):
+    monkeypatch.setattr(ps, "order_state",
+                        lambda oid, key=None: {"id": oid, "state": "failed",
+                                               "last_message": "boom"})
+    with pytest.raises(ps.PlanetError, match="boom"):
+        ps.wait_order("o1", poll=0)
+
+
+def _delivery(tmp_path, tamper=False):
+    """Fake one-file-plus-manifest delivery; returns (order_json, bodies)."""
+    import hashlib
+    data = b"pretend geotiff bytes"
+    digest = hashlib.sha256(b"tampered" if tamper else data).hexdigest()
+    manifest = json.dumps({"files": [
+        {"path": "PSScene/scene1_sr_clip.tif", "size": len(data),
+         "digests": {"sha256": digest}}]}).encode()
+    order = {"id": "ord42", "state": "success", "_links": {"results": [
+        {"name": "ord42/PSScene/scene1_sr_clip.tif", "location": "https://x/1"},
+        {"name": "ord42/manifest.json", "location": "https://x/2"},
+    ]}}
+    return order, {"https://x/1": data, "https://x/2": manifest}
+
+
+class _Stream:
+    ok, status_code, url = True, 200, "https://x"
+
+    def __init__(self, body):
+        self._body = body
+
+    def iter_content(self, n):
+        yield self._body
+
+
+def test_download_order_verifies_manifest(tmp_path, monkeypatch):
+    order, bodies = _delivery(tmp_path)
+    monkeypatch.setattr(ps.requests, "get",
+                        lambda url, **kw: _Stream(bodies[url]))
+    monkeypatch.setenv("PL_API_KEY", "PLAKtest")
+    got = ps.download_order(order, tmp_path / "dl")
+    names = sorted(p.name for p in got)
+    assert names == ["manifest.json", "scene1_sr_clip.tif"]
+    # order-id prefix stripped so disk layout matches manifest paths
+    assert (tmp_path / "dl" / "PSScene" / "scene1_sr_clip.tif").exists()
+
+
+def test_download_order_rejects_bad_checksum(tmp_path, monkeypatch):
+    order, bodies = _delivery(tmp_path, tamper=True)
+    monkeypatch.setattr(ps.requests, "get",
+                        lambda url, **kw: _Stream(bodies[url]))
+    monkeypatch.setenv("PL_API_KEY", "PLAKtest")
+    with pytest.raises(ps.PlanetError, match="sha256 mismatch"):
+        ps.download_order(order, tmp_path / "dl")
+
+
+def test_stage_order_moves_and_writes_provenance(tmp_path, monkeypatch):
+    src = tmp_path / "stage" / "scene1_sr_clip.tif"
+    src.parent.mkdir()
+    src.write_bytes(b"cog bytes")
+    box = tmp_path / "box"
+    monkeypatch.setattr(ps.paths, "raw_dir",
+                        lambda *parts: box.joinpath(*parts))
+    req = ps.order_request("t", ["scene1"], "hidden_valley")
+    dest = ps.stage_order([src], "hidden_valley", "pre_2026_07",
+                          order_id="ord42", request=req)
+    moved = dest / "scene1_sr_clip.tif"
+    prov = dest / "scene1_sr_clip.tif.provenance.json"
+    assert moved.exists() and not src.exists()          # atomic move
+    meta = json.loads(prov.read_text())
+    assert meta["order_id"] == "ord42"
+    assert meta["bundle"] == "analytic_sr_udm2"
+    assert meta["item_ids"] == ["scene1"]
+    assert "clip" in meta["tools"] and "harmonize" in meta["tools"]

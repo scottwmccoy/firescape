@@ -81,7 +81,15 @@ the statewide figure 2026-08-14.
   Key resolution: `key=` arg → `$PL_API_KEY` → `~/.config/firescape/planet_api_key`
   (0600; NEVER in repo/Box/memory). Account is on the NASA CSDA IDIQ pool —
   quota effectively unbounded, but search first (free), order deliberately.
-  `clear_percent` (udm2-based) is the trustworthy cloud field, not `cloud_cover`.
+  Traps, all live-verified: **~30-day download embargo** (search/thumbnails
+  immediate, `assets:download` appears ~day 30 — post-storm verification waits
+  a month); `clear_percent` is SCENE-wide — rank scenes by
+  `aoi_coverage()` (a 100%-clear scene covered 8% of the Hidden Valley AOI);
+  a `clear_percent` filter silently drops pre-Aug-2018 (pre-udm2) scenes —
+  use `cloud_cover` for old baselines; udm2 shadow band is unreliable
+  (published F1≈0.6) — do terrain shadows ourselves from the DEM. Orders
+  vanish from listings after ~3 months; the `.provenance.json` sidecar
+  (`stage_order`) is the durable record. Harmonize tool = PS2.SD/PSB.SD only.
 - ScienceBase 403s plain fetches — use curl/requests with a browser User-Agent.
 - BAER/SBS: NV fires are mostly BLM (ESR program, not USFS BAER) — query the
   burn-severity portal ImageServer by IRWIN ID; fallback = derive dNBR from
