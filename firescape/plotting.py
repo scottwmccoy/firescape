@@ -18,8 +18,13 @@ below were made against printed output and are deliberate:
 * **Colourblind-safe ramps only** (Okabe-Ito categorical, viridis/magma
   continuous). Fire perimeters use white with a black casing, which survives
   every ramp underneath -- the earlier pink clashed with magma.
-* **PNG at 300 dpi and PDF together.** The PDF keeps linework, labels and
-  boundaries as vectors for figure-scale zooming.
+* **PDF only.** These figures are mostly one big rasterized data layer plus
+  vector furniture, and a PDF stores that layer once at its own resolution
+  while keeping linework, labels and boundaries as vectors. The PNG of the
+  same figure was consistently two to three times the size for strictly less
+  -- 25.9 MB against 6.7 MB for the Las Vegas corridor -- so it is no longer
+  written by default. ``save(..., formats=("png", "pdf"))`` still gets both
+  when something downstream needs a raster.
 """
 
 from __future__ import annotations
@@ -281,8 +286,13 @@ def style_axes(ax, extent, *, step: float = 1.0):
     ax.tick_params(length=2.5)
 
 
-def save(fig, stem: str, *, dpi: int = 300, formats=("png", "pdf")):
-    """Write a figure to ``figures/`` in each format. Returns the paths."""
+def save(fig, stem: str, *, dpi: int = 300, formats=("pdf",)):
+    """Write a figure to ``figures/`` in each format. Returns the paths.
+
+    PDF alone by default -- see the module docstring. ``dpi`` applies to
+    raster formats only; a PDF carries its rasterized layers at their own
+    resolution and its linework as vectors.
+    """
     written = []
     for ext in formats:
         out = paths.figures_dir() / f"{stem}.{ext}"

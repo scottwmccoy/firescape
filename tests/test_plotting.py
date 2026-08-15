@@ -157,15 +157,26 @@ def test_draw_context_plots_every_layer(ax, tmp_path):
 
 # --- output ----------------------------------------------------------------
 
-def test_save_writes_png_and_pdf(tmp_path, monkeypatch):
+def test_save_writes_pdf_only_by_default(tmp_path, monkeypatch):
     fig, a = plt.subplots()
     a.plot([0, 1], [0, 1])
     written = plotting.save(fig, "unit_test_fig")
     plt.close(fig)
 
-    assert [p.suffix for p in written] == [".png", ".pdf"]
+    assert [p.suffix for p in written] == [".pdf"]
     assert all(p.exists() and p.stat().st_size > 0 for p in written)
     assert all(p.parent == paths.figures_dir() for p in written)
+
+
+def test_save_still_writes_png_on_request(tmp_path, monkeypatch):
+    """A raster is opt-in, not gone -- some downstream uses need one."""
+    fig, a = plt.subplots()
+    a.plot([0, 1], [0, 1])
+    written = plotting.save(fig, "unit_test_fig_both", formats=("png", "pdf"))
+    plt.close(fig)
+
+    assert [p.suffix for p in written] == [".png", ".pdf"]
+    assert all(p.exists() and p.stat().st_size > 0 for p in written)
 
 
 def test_layer_alpha_ceiling_is_documented():

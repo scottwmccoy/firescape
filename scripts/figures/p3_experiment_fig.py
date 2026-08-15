@@ -75,8 +75,6 @@ fig.suptitle(
     "statewide: zero-volume 93.0% (Gartner-det) $\\rightarrow$ 1.7% (RANGES)",
     y=1.0, fontsize=12)
 fig.tight_layout()
-png = paths.figures_dir() / "dist_severity_experiment.png"
-fig.savefig(png, bbox_inches="tight", dpi=300)
-fig.savefig(paths.figures_dir() / "dist_severity_experiment.pdf",
-            bbox_inches="tight")
-print("wrote", png)
+out = paths.figures_dir() / "dist_severity_experiment.pdf"   # see plotting.save
+fig.savefig(out, bbox_inches="tight")
+print("wrote", out)

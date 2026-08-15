@@ -80,9 +80,32 @@ CDF refit.
 (historic MTBS perimeters over the hazard map), `p3_experiment_fig.py`,
 `m4_maps.py` / `m4v2_maps.py` / `v1v2_maps.py` (pilot).
 
+### Urban corridors
+
+Two sheets over the same two windows, in two formats:
+
+| script | format | asks |
+|---|---|---|
+| `p10_urban_zooms.py` | triptych, outlet-basin polygons | P(F), P(R>T) and their product — **how often** should this happen |
+| `p12_urban_zoom_forecast.py` | pair, stream-segment lines | triggering $I_{15}$ and hazard class — **what happens if it burns**, the form the single-fire sheets take |
+
+```bash
+python scripts/figures/p10_urban_zooms.py          reno_carson statewide_v1_2
+python scripts/figures/p12_urban_zoom_forecast.py  las_vegas   statewide_v1_2
+```
+
+Both import `_corridors.py`, which owns the window bounds, the place and
+watercourse whitelists, the label styling and the figure sizing — so the two
+sheets stay comparable and a new corridor is one dict entry. The forecast
+sheet reads the **per-unit** `*_segments.gpkg` files (307k segments in Reno,
+604k in Las Vegas) rather than the merged basin layer, and repeats the merge's
+KF gap fill so the two formats agree.
+
 All of them draw through `firescape.plotting` (house style) and
 `firescape.relief` (hillshade); see those modules before changing how a figure
-looks, and the repo CLAUDE.md for the DEM-resampling traps.
+looks, and the repo CLAUDE.md for the DEM-resampling traps. `plotting.save`
+writes **PDF only** — pass `formats=("png", "pdf")` if something downstream
+needs a raster.
 
 ## products/
 

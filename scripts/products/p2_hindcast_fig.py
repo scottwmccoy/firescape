@@ -164,7 +164,6 @@ fig.tight_layout()
 stem = ("hindcast_"
         + LABEL.replace(",", "").strip().lower().replace(" ", "_")
         .replace("(", "").replace(")", ""))
-png = paths.figures_dir() / f"{stem}.png"
-fig.savefig(png, bbox_inches="tight", dpi=300)
-fig.savefig(paths.figures_dir() / f"{stem}.pdf", bbox_inches="tight")
-print("wrote", png)
+out = paths.figures_dir() / f"{stem}.pdf"     # PDF only -- see plotting.save
+fig.savefig(out, bbox_inches="tight")
+print("wrote", out)

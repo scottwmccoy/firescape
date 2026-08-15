@@ -1,0 +1,211 @@
+"""Urban corridors in the fire-forecast format: the drainage network itself.
+
+:mod:`p10_urban_zooms` answers "how often should this happen", which is the
+right question for a hazard rate but the wrong one for anybody deciding where
+to put a debris basin. This sheet asks the question the post-fire assessments
+ask -- **if this drainage burned today, how hard does it have to rain, and how
+bad is it at the reference storm** -- over the same two windows, in the same
+two-panel form as ``stallion_forecast`` and ``bug_forecast``.
+
+Two things change from the triptych, and both are deliberate:
+
+* **Segments, not basins.** The annualized sheets rasterize the *outlet* basin
+  polygons -- 33k of them in the Reno window. This draws the full stream
+  network beneath them: 307k segments in Reno, 604k in Las Vegas. That is what
+  a USGS assessment sheet shows, and it is the only view at which a single
+  channel above a subdivision can be picked out and pointed at.
+* **Conditional on burning.** No P(F), no annual rate. Triggering intensity
+  and hazard class are what they are the day after a fire.
+
+Everything else -- window, place names, watercourses, line weights -- is
+shared with the triptych through :mod:`_corridors`, so the two sheets can be
+laid side by side and any difference between them is a difference in the data.
+
+Segment collections are drawn ``rasterized=True``: at 600k lines a vector PDF
+would be several hundred megabytes to no purpose, since each segment is a few
+pixels long at print scale. Labels, boundaries and axes stay vector.
+"""
+import json
+import sys
+import warnings
+
+warnings.filterwarnings("ignore")
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import pyogrio
+from matplotlib.colors import BoundaryNorm, ListedColormap
+from rasterio.warp import transform_bounds
+from shapely.geometry import box
+
+import geopandas as gpd
+
+import _corridors as cor
+from firescape import hazard as hz, paths, plotting as mc, relief
+
+VERSION = sys.argv[2] if len(sys.argv) > 2 else "statewide_v1_2"
+name = sys.argv[1] if len(sys.argv) > 1 else None
+todo = [name] if name else list(cor.ZOOMS)
+
+PROD = paths.products_dir("prefire", VERSION)
+HU = paths.interim_dir("statewide") / "nv_hu10.geojson"
+
+HAZ = ListedColormap(["#4B9B6E", "#E8A33D", "#C1272D"])   # low / mod / high
+NORM = BoundaryNorm([0.5, 1.5, 2.5, 3.5], HAZ.N)
+SEG_LW = 0.4
+
+
+def statewide_median_kf():
+    """The KF the merge used to fill SSURGO gaps.
+
+    The per-unit segment files were written before that fill, so ~0.6% of them
+    carry a NaN ``Soil_M1`` and therefore no likelihood at all. Filling them
+    the same way the published basin layer was filled keeps the two corridor
+    sheets consistent with each other; reading the column back (no geometry,
+    ~1 s over 412k rows) keeps it consistent with the product rather than with
+    a number pasted into this script.
+    """
+    g = pyogrio.read_dataframe(PROD / f"{VERSION}_basins.gpkg",
+                               columns=["Soil_M1"], read_geometry=False)
+    return float(np.nanmedian(g["Soil_M1"]))
+
+
+def segments_in(bounds):
+    """Every modelled stream segment in the window, as one lon/lat frame."""
+    hu = gpd.read_file(HU).to_crs("EPSG:4326")
+    keys = hu[hu.intersects(box(*bounds))]["huc10"].astype(str)
+    bbox5070 = transform_bounds("EPSG:4326", "EPSG:5070", *bounds)
+    parts, missing = [], []
+    for k in sorted(keys):
+        f = PROD / f"{k}_segments.gpkg"
+        if not f.exists():
+            # Not a failure: a unit that is all playa (Smoke Creek Desert, in
+            # the Reno window) is masked out entirely and writes nothing.
+            missing.append(k)
+            continue
+        g = pyogrio.read_dataframe(
+            f, bbox=bbox5070,
+            columns=["Area_km2", "Terrain_M1", "Fire_M1", "Soil_M1",
+                     "V_24mmh", "I15_50", "H_24mmh"])
+        if len(g):
+            parts.append(g)
+    if not parts:
+        sys.exit(f"no segment files with data inside {bounds}")
+    if missing:
+        print(f"  {len(missing)} unit(s) modelled to nothing (all valley or "
+              f"playa): {', '.join(missing)}", flush=True)
+    seg = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True),
+                           geometry="geometry", crs=parts[0].crs)
+    return seg.to_crs("EPSG:4326")
+
+
+for key in todo:
+    z = cor.ZOOMS[key]
+    bounds = z["bounds"]
+    print(f"\n=== {key}: {z['label']} (forecast format) ===", flush=True)
+
+    seg = segments_in(bounds)
+    print(f"{len(seg):,} segments in the window", flush=True)
+
+    # Same gap fill and same recomputation as the statewide merge.
+    S = seg["Soil_M1"].to_numpy().copy()
+    gap = ~np.isfinite(S)
+    if gap.any():
+        S[gap] = statewide_median_kf()
+        print(f"KF gaps filled: {int(gap.sum()):,} segments "
+              f"({gap.mean():.2%}) at {S[gap][0]:.3f}", flush=True)
+    T, F = seg["Terrain_M1"].to_numpy(), seg["Fire_M1"].to_numpy()
+    seg["P_24mmh"] = hz.likelihood_m1(T, F, S)
+    seg["I15_50"] = hz.threshold_i15(T, F, S, p=0.5)
+    seg["H_24mmh"] = hz.combined_c10(seg["P_24mmh"].to_numpy(),
+                                     seg["V_24mmh"].to_numpy())
+
+    tr, shape, extent = mc.grid(bounds, res=z["res"])
+    print(f"display grid {shape[1]}x{shape[0]} @ {z['res']:g} deg", flush=True)
+    hs = relief.shaded_relief(
+        sorted((paths.cache_root() / "3dep_tiles").glob("USGS_13_*.tif")),
+        tr, shape, crs="EPSG:4326", shade_res_m=30.0)
+    C = cor.context(key)
+    im_extent = (extent[0], extent[1], extent[2], extent[3])
+
+    thr = seg["I15_50"].to_numpy()
+    lo, hi = np.percentile(thr[np.isfinite(thr)], [2, 98])
+    counts = seg["H_24mmh"].value_counts()
+    med_thr = float(np.nanmedian(thr))
+    net_km = float(seg.to_crs("EPSG:5070").length.sum() / 1e3)
+
+    panel_h = 9.4
+    fig, axes = plt.subplots(
+        1, 2, figsize=(cor.figure_width(bounds, 2, panel_h=panel_h),
+                       panel_h + 2.1), dpi=140)
+
+    for ax, mode in zip(axes, ("threshold", "hazard")):
+        ax.imshow(hs, cmap="gray", vmin=0, vmax=1, extent=im_extent, zorder=0)
+        # Lines are drawn opaque. The alpha ceiling exists so terrain reads
+        # through a data layer; a 0.4 pt line covers so little of the canvas
+        # that the hillshade is never buried, and washing it out would cost
+        # the colour resolution the panel is for.
+        if mode == "threshold":
+            # descending, so the channels that respond to the SMALLEST storm
+            # end up drawn on top rather than buried under their neighbours
+            d = seg.sort_values("I15_50", ascending=False)
+            d.plot(ax=ax, column="I15_50", cmap="plasma_r", linewidth=SEG_LW,
+                   vmin=lo, vmax=hi, zorder=5, legend=True,
+                   legend_kwds={"shrink": 0.55, "pad": 0.02, "extend": "both",
+                                "label": "triggering $I_{15}$ (mm/h) "
+                                         "at 50% likelihood"})
+            fig.axes[-1].tick_params(labelsize=8)     # geopandas' colourbar
+            ax.set_title("Rainfall intensity that triggers a debris flow\n"
+                         "lower = responds to a smaller storm", fontsize=10.5)
+        else:
+            d = seg.sort_values("H_24mmh")          # high class drawn last
+            d.plot(ax=ax, column="H_24mmh", cmap=HAZ, norm=NORM,
+                   linewidth=SEG_LW, zorder=5)
+            # A discrete colourbar rather than the in-map legend the
+            # single-fire sheets carry. Both panels are aspect-locked, so a
+            # colourbar on only one of them steals width from that panel
+            # alone and the pair stops being the same size -- which is
+            # exactly what a reader compares them by.
+            sm = plt.cm.ScalarMappable(cmap=HAZ, norm=NORM)
+            cb = fig.colorbar(sm, ax=ax, shrink=0.55, pad=0.02, ticks=[1, 2, 3])
+            cb.ax.set_yticklabels(["low", "moderate", "high"], fontsize=8)
+            cb.set_label("combined hazard class (Cannon et al. 2010)")
+            ax.set_title("Combined hazard class at the 24 mm/h reference storm\n"
+                         "(≈1-year, 15-minute intensity)", fontsize=10.5)
+        ax.collections[-1].set_rasterized(True)
+        cor.decorate(ax, C, extent, step=z["step"])
+
+    q = np.nanpercentile(thr, [5, 95])
+    fig.tight_layout(w_pad=0.4)
+    cor.suptitle(fig, [
+        f"{z['label']} — firescape {VERSION} pre-fire debris-flow forecast",
+        f"{z['blurb']} · {len(seg):,} stream segments, "
+        f"{net_km:,.0f} km of channel",
+        f"median triggering $I_{{15}}$ {med_thr:.0f} mm/h "
+        f"(5–95%: {q[0]:.0f}–{q[1]:.0f}) · "
+        f"{int(counts.get(2, 0)):,} moderate, {int(counts.get(3, 0)):,} high "
+        "— conditional on the basin burning",
+    ])
+    mc.save(fig, f"zoom_{key}_forecast_{VERSION}")
+    plt.close(fig)
+
+    stats = {
+        "zoom": key, "label": z["label"], "version": VERSION,
+        "format": "forecast (segment network, conditional on burning)",
+        "bounds": list(bounds), "segments": int(len(seg)),
+        "network_length_km": round(net_km, 1),
+        "hazard_class": {str(int(k)): int(v) for k, v in counts.items()},
+        "kf_gap_filled": int(gap.sum()),
+        "I15_50_mmh": {"p05": round(float(q[0]), 1),
+                       "median": round(med_thr, 1),
+                       "p95": round(float(q[1]), 1)},
+        "median_P_24mmh": round(float(np.nanmedian(seg["P_24mmh"])), 3),
+        "segments_under_20_mmh": int((thr < 20).sum()),
+    }
+    out = PROD / f"zoom_{key}_forecast_summary.json"
+    out.write_text(json.dumps(stats, indent=2))
+    print(json.dumps(stats, indent=2), flush=True)
