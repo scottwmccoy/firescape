@@ -6,14 +6,16 @@ a scale where an individual drainage above a subdivision is legible: a ~50 m
 display grid, hillshade shaded at 30 m, sub-degree graticule ticks, and every
 incorporated place labelled rather than the statewide city whitelist.
 
-Two panels per corridor -- the operational hazard class at the reference storm,
-and the annualised probability. The probability colour bar is labelled as a
-**return interval** ("1 in 300 yr") rather than a decimal, because that is the
-form the number gets used in.
+The same triptych as the statewide sheet -- the two factors and their product.
+Probability bars are labelled as **return intervals** ("1 in 300 yr"), the form
+the number gets quoted in; P(R>T) keeps plain decimals, since it lives between
+about 0.01 and 0.9. Hazard-class counts still go to the summary JSON.
 
 Both corridors deliberately run past the state line: the drainages above the
-Sierra front and the Spring Mountains do not stop at a border, and P(F) now
-covers the neighbouring states so the basins there carry real values.
+Sierra front and the Spring Mountains do not stop at a border, P(F) now covers
+the neighbouring states, and the Lake Tahoe / Truckee River units on the
+California side were added so that basin is whole rather than clipped at the
+border.
 """
 import json
 import sys
@@ -39,10 +41,11 @@ VERSION = sys.argv[2] if len(sys.argv) > 2 else "statewide_v1_2"
 #: (west, south, east, north), tick step in degrees, display resolution.
 ZOOMS = {
     "reno_carson": dict(
-        bounds=(-120.45, 38.72, -119.15, 40.42), step=0.25, res=0.0005,
+        bounds=(-120.36, 38.58, -119.15, 40.42), step=0.25, res=0.0005,
         label="Reno–Carson corridor",
         blurb="north Pyramid Lake through Reno–Sparks to Carson City, "
-              "Minden and Gardnerville, with the Sierra front"),
+              "Minden and Gardnerville, west to the Sierra crest above "
+              "Lake Tahoe and south past Topaz Lake"),
     "las_vegas": dict(
         bounds=(-116.35, 34.90, -113.90, 36.95), step=0.5, res=0.0006,
         label="Las Vegas / Clark County",
@@ -53,6 +56,7 @@ ZOOMS = {
 name = sys.argv[1] if len(sys.argv) > 1 else None
 todo = [name] if name else list(ZOOMS)
 GP = paths.products_dir("prefire", VERSION) / f"{VERSION}_basins.gpkg"
+nv = gpd.read_file(paths.raw_dir("boundaries") / "nv_state.geojson").to_crs("EPSG:4326")
 
 HAZ = ListedColormap(["#4B9B6E", "#E8A33D", "#C1272D"])
 NORM = BoundaryNorm([0.5, 1.5, 2.5, 3.5], HAZ.N)
@@ -104,7 +108,8 @@ for key in todo:
     bbox5070 = transform_bounds("EPSG:4326", "EPSG:5070", *bounds)
     basins = read_dataframe(
         GP, bbox=bbox5070,
-        columns=["H_24mmh", "P_24mmh", "P_annual", "I15_50"]).to_crs("EPSG:4326")
+        columns=["H_24mmh", "P_24mmh", "P_annual", "P_F", "P_RgtT",
+                 "I15_50"]).to_crs("EPSG:4326")
     if basins.empty:
         sys.exit(f"no basins within {bounds}")
     print(f"{len(basins):,} basins in the window", flush=True)
@@ -116,61 +121,78 @@ for key in todo:
         tr, shape, crs="EPSG:4326", shade_res_m=30.0)
     ctx = mc.fetch_context(bounds, cache_dir=paths.interim_dir("zooms", key))
     pl = places_for(bounds)
+    # Natural Earth 10 m carries two rivers in the Reno window and does not
+    # include the Truckee at all -- at corridor scale the watercourses have to
+    # come from NHD, which is what the map is actually about.
+    rv_path = paths.interim_dir("zooms", key) / "context_nhd_named.geojson"
+    if rv_path.exists():
+        ctx["rivers"] = gpd.read_file(rv_path)
+    else:
+        from stormscape import refdata
+        rv = refdata.streams(bounds, named_only=True).to_crs("EPSG:4326")
+        # One label per named watercourse, on its longest reach, and only the
+        # 30 longest -- NHD names hundreds of creeks in a window this size.
+        rv["_len"] = rv.to_crs("EPSG:5070").length
+        rv = (rv.sort_values("_len", ascending=False)
+                .drop_duplicates("name").head(30)
+                .drop(columns="_len").reset_index(drop=True))
+        rv.to_file(rv_path, driver="GeoJSON")
+        ctx["rivers"] = rv
+    print(f"{len(ctx['rivers'])} named watercourses", flush=True)
     im_extent = (extent[0], extent[1], extent[2], extent[3])
 
     counts = basins["H_24mmh"].value_counts()
-    fig, axes = plt.subplots(1, 2, figsize=(20, 11.5), dpi=140)
-
-    ax = axes[0]
-    ax.imshow(hs, cmap="gray", vmin=0, vmax=1, extent=im_extent, zorder=0)
-    arr = mc.burn(basins, "H_24mmh", tr, shape)
-    imh = ax.imshow(np.ma.masked_invalid(arr), cmap=HAZ, norm=NORM,
-                    extent=im_extent, alpha=mc.MAX_LAYER_ALPHA, zorder=2,
-                    interpolation="nearest")
-    # A colour bar rather than a legend, so both panels give up the same width
-    # to their bar and end up the same size; the counts ride on the ticks.
-    cbh = fig.colorbar(imh, ax=ax, shrink=0.55, pad=0.02, ticks=[1, 2, 3])
-    cbh.ax.set_yticklabels([f"{l}\n({int(counts.get(i, 0)):,})" for i, l in
-                            enumerate(["low", "moderate", "high"], 1)],
-                           fontsize=8)
-    cbh.set_label("combined hazard class", fontsize=9)
-    ax.set_title("Combined hazard class at the 24 mm/h reference storm\n"
-                 "(≈1-year, 15-minute intensity)", fontsize=10.5)
-
-    ax = axes[1]
-    ax.imshow(hs, cmap="gray", vmin=0, vmax=1, extent=im_extent, zorder=0)
-    arr = mc.burn(basins, "P_annual", tr, shape)
-    v = arr[np.isfinite(arr) & (arr > 0)]
-    lo, hi = np.percentile(v, [2, 99.5])
-    # light-to-dark warm ramp: over a pale hillshade the most hazardous basins
-    # need to be the darkest thing on the panel, and dark red matches the
-    # hazard-class legend beside it
-    im = ax.imshow(np.ma.masked_invalid(arr), cmap="YlOrRd",
-                   norm=LogNorm(vmin=lo, vmax=hi), extent=im_extent,
-                   alpha=mc.MAX_LAYER_ALPHA, zorder=2,
-                   interpolation="antialiased")
-    cb = fig.colorbar(im, ax=ax, shrink=0.55, pad=0.02)
-    cb.ax.yaxis.set_major_locator(
-        FixedLocator([t for t in RI_TICKS if lo <= t <= hi]))
-    cb.ax.yaxis.set_minor_locator(FixedLocator([]))
-    cb.ax.yaxis.set_major_formatter(
-        FuncFormatter(lambda x, _: f"1 in {round(1/x, -1):,.0f} yr" if x > 0 else ""))
-    cb.ax.tick_params(labelsize=8)
     med = float(np.nanmedian(basins["P_annual"]))
-    ax.set_title("Annual probability of a postfire debris flow\n"
-                 f"P(F) × P(R>T) · median basin ≈ 1 in {1/med:,.0f} yr",
-                 fontsize=10.5)
+    fig, axes = plt.subplots(1, 3, figsize=(24, 11.5), dpi=140)
 
+    # Same triptych as the statewide sheet: the two factors, then the product.
+    spec = [("P_F", "magma", "P(F) — annual burn probability\n"
+             "FSim / Wildfire Risk to Communities"),
+            ("P_RgtT", "viridis", "P(R>T) — annual chance of threshold rain\n"
+             "given the basin has burned"),
+            ("P_annual", "YlOrRd", "P(F) × P(R>T) — annual probability\n"
+             f"of a postfire debris flow · median ≈ 1 in {1/med:,.0f} yr")]
+    for ax, (col, cmap, title) in zip(axes, spec):
+        ax.imshow(hs, cmap="gray", vmin=0, vmax=1, extent=im_extent, zorder=0)
+        arr = mc.burn(basins, col, tr, shape)
+        v = arr[np.isfinite(arr) & (arr > 0)]
+        lo, hi = np.percentile(v, [2, 99.5])
+        im = ax.imshow(np.ma.masked_invalid(arr), cmap=cmap,
+                       norm=LogNorm(vmin=lo, vmax=hi), extent=im_extent,
+                       alpha=mc.MAX_LAYER_ALPHA, zorder=2,
+                       interpolation="antialiased")
+        cb = fig.colorbar(im, ax=ax, shrink=0.55, pad=0.02)
+        cb.ax.tick_params(labelsize=8)
+        cb.ax.yaxis.set_minor_locator(FixedLocator([]))
+        if col == "P_RgtT":            # decimals, as on the statewide sheet
+            cand = [0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9]
+            cb.ax.yaxis.set_major_locator(
+                FixedLocator([x for x in cand if lo <= x <= hi]))
+            cb.ax.yaxis.set_major_formatter(FuncFormatter(
+                lambda x, _: f"{x:.3f}".rstrip("0").rstrip(".") if x > 0 else ""))
+        else:                          # return intervals, the quoted form
+            cb.ax.yaxis.set_major_locator(
+                FixedLocator([x for x in RI_TICKS if lo <= x <= hi]))
+            cb.ax.yaxis.set_major_formatter(FuncFormatter(
+                lambda x, _: f"1 in {round(1/x, -1):,.0f} yr" if x > 0 else ""))
+        ax.set_title(title, fontsize=10.5)
+
+    import matplotlib.patheffects as pe
+    halo = [pe.withStroke(linewidth=1.6, foreground="white")]
     for ax in axes:
-        mc.draw_context(ax, ctx, label_cities=False, label_rivers=False)
+        # rivers named: at corridor scale the drainage is the subject
+        mc.draw_context(ax, ctx, label_cities=False, label_rivers=True)
+        nv.boundary.plot(ax=ax, color="black", linewidth=1.6, zorder=8)
         if len(pl):
-            ax.scatter(pl.geometry.x, pl.geometry.y, s=16, color="black",
-                       edgecolor="white", linewidth=0.6, zorder=9)
+            ax.scatter(pl.geometry.x, pl.geometry.y, s=10, color="black",
+                       edgecolor="white", linewidth=0.5, zorder=9)
             for _, r in pl.iterrows():
+                # a WHITE halo: the calibration-perimeter style is a black
+                # stroke, which around black text just reads as bold
                 ax.annotate(str(r["name"]), (r.geometry.x, r.geometry.y),
-                            xytext=(4, 3), textcoords="offset points",
-                            fontsize=7.5, zorder=9.1, color="black",
-                            path_effects=mc.fire_style("calibration")["path_effects"])
+                            xytext=(3, 2), textcoords="offset points",
+                            fontsize=6, zorder=9.1, color="black",
+                            path_effects=halo)
         mc.style_axes(ax, extent, step=z["step"])
 
     fig.suptitle(
