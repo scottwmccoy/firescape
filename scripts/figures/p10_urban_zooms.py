@@ -42,12 +42,16 @@ VERSION = sys.argv[2] if len(sys.argv) > 2 else "statewide_v1_2"
 ZOOMS = {
     "reno_carson": dict(
         bounds=(-120.36, 38.58, -119.15, 40.42), step=0.25, res=0.0005,
+        rivers=("Truckee River", "Carson River"),
+        lakes=("Lake Tahoe", "Pyramid Lake"),
         label="Reno–Carson corridor",
         blurb="north Pyramid Lake through Reno–Sparks to Carson City, "
               "Minden and Gardnerville, west to the Sierra crest above "
               "Lake Tahoe and south past Topaz Lake"),
     "las_vegas": dict(
         bounds=(-116.35, 34.90, -113.90, 36.95), step=0.5, res=0.0006,
+        rivers=("Colorado River", "Virgin River", "Muddy River"),
+        lakes=("Lake Mead", "Lake Mohave"),
         label="Las Vegas / Clark County",
         blurb="Clark County with the Spring Mountains north of Pahrump, "
               "to the southern and eastern state lines"),
@@ -124,26 +128,51 @@ for key in todo:
     # Natural Earth 10 m carries two rivers in the Reno window and does not
     # include the Truckee at all -- at corridor scale the watercourses have to
     # come from NHD, which is what the map is actually about.
-    rv_path = paths.interim_dir("zooms", key) / "context_nhd_named.geojson"
+    rv_path = paths.interim_dir("zooms", key) / "context_major_rivers.geojson"
     if rv_path.exists():
         ctx["rivers"] = gpd.read_file(rv_path)
     else:
         from stormscape import refdata
         rv = refdata.streams(bounds, named_only=True).to_crs("EPSG:4326")
-        # One label per named watercourse, on its longest reach, and only the
-        # 30 longest -- NHD names hundreds of creeks in a window this size.
-        rv["_len"] = rv.to_crs("EPSG:5070").length
-        rv = (rv.sort_values("_len", ascending=False)
-                .drop_duplicates("name").head(30)
-                .drop(columns="_len").reset_index(drop=True))
+        # Named-and-longest still leaves thirty creeks and washes, which at
+        # this scale is clutter rather than context. Only the trunk rivers the
+        # corridor is organised around get a label; everything else stays
+        # drawn but unnamed.
+        want = z["rivers"]
+        keep = rv["name"].astype(str).apply(
+            lambda n: any(w.lower() in n.lower() for w in want))
+        rv = rv[keep].reset_index(drop=True)
         rv.to_file(rv_path, driver="GeoJSON")
         ctx["rivers"] = rv
-    print(f"{len(ctx['rivers'])} named watercourses", flush=True)
+    # EVERY reach is kept for drawing. Deduplicating by name here -- the
+    # obvious way to get one label per river -- silently throws away the rest
+    # of the river: NHD splits the Truckee into dozens of reaches, so what got
+    # drawn was a 5 km fragment. Labels are deduplicated separately, below.
+    rv_all = ctx["rivers"]
+    rv_all = rv_all[rv_all.geometry.notna()]
+    _l = rv_all.to_crs("EPSG:5070").length
+    rv_lab = (rv_all.assign(_len=_l.values).sort_values("_len", ascending=False)
+                    .drop_duplicates("name").copy())
+    rv_lab["geometry"] = rv_lab.geometry.interpolate(0.5, normalized=True)
+    print(f"{len(rv_all)} reaches of "
+          f"{sorted(rv_lab['name'].astype(str))}", flush=True)
+
+    # Major lakes get a name too; the layer already holds only the big ones.
+    lk = ctx["lakes"]
+    lk_lab = lk[lk["name"].astype(str).isin(z["lakes"])] if "name" in lk else lk.iloc[:0]
     im_extent = (extent[0], extent[1], extent[2], extent[3])
 
     counts = basins["H_24mmh"].value_counts()
     med = float(np.nanmedian(basins["P_annual"]))
-    fig, axes = plt.subplots(1, 3, figsize=(24, 11.5), dpi=140)
+    # Panels are aspect-locked to 1/cos(lat), so a fixed figure width leaves a
+    # different amount of white space per corridor. Size the figure to the data
+    # instead: tall-narrow Reno gets a narrow figure, square-ish Vegas a wide one.
+    import math
+    lon_span, lat_span = bounds[2] - bounds[0], bounds[3] - bounds[1]
+    ratio = lon_span * math.cos(math.radians((bounds[1] + bounds[3]) / 2)) / lat_span
+    panel_h = 9.4
+    fig_w = 3 * (panel_h * ratio + 0.95) + 0.5
+    fig, axes = plt.subplots(1, 3, figsize=(fig_w, panel_h + 2.1), dpi=140)
 
     # Same triptych as the statewide sheet: the two factors, then the product.
     spec = [("P_F", "magma", "P(F) — annual burn probability\n"
@@ -181,8 +210,17 @@ for key in todo:
     halo = [pe.withStroke(linewidth=1.6, foreground="white")]
     for ax in axes:
         # rivers named: at corridor scale the drainage is the subject
-        mc.draw_context(ax, ctx, label_cities=False, label_rivers=True)
+        mc.draw_context(ax, ctx, label_cities=False, label_rivers=False)
         nv.boundary.plot(ax=ax, color="black", linewidth=1.6, zorder=8)
+        for _, r in rv_lab.iterrows():
+            ax.annotate(str(r["name"]), (r.geometry.x, r.geometry.y),
+                        fontsize=6.5, style="italic", color="#1b4f72",
+                        ha="center", zorder=9.1, path_effects=halo)
+        for _, r in lk_lab.iterrows():
+            c = r.geometry.representative_point()
+            ax.annotate(str(r["name"]), (c.x, c.y), fontsize=7,
+                        style="italic", color="#1b4f72", ha="center",
+                        zorder=9.1, path_effects=halo)
         if len(pl):
             ax.scatter(pl.geometry.x, pl.geometry.y, s=10, color="black",
                        edgecolor="white", linewidth=0.5, zorder=9)
@@ -200,7 +238,7 @@ for key in todo:
         f"{z['blurb']} · {len(basins):,} basins · "
         f"{int(counts.get(2, 0)):,} moderate, {int(counts.get(3, 0)):,} high",
         y=0.98, fontsize=13)
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.tight_layout(rect=(0, 0, 1, 0.94), w_pad=0.4)
     mc.save(fig, f"zoom_{key}_{VERSION}")
     plt.close(fig)
 
