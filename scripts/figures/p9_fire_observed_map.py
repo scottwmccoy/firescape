@@ -23,7 +23,9 @@ import geopandas as gpd
 from firescape import paths, plotting as mc, relief
 from stormscape import burn
 
-FIRE, CAL = "Stallion", "statewide_v1_1"
+import sys
+FIRE = sys.argv[1] if len(sys.argv) > 1 else "Stallion"
+CAL = sys.argv[2] if len(sys.argv) > 2 else "statewide_v1_1"
 STORM = ("/Users/scottmccoy/Library/CloudStorage/Box-Box/SWMresearch/"
          "PostFireDebrisFlows/2026_Bug_Stalion/storms/composite_20260812-20260814")
 OBS = paths.products_dir("forecast", f"{FIRE.lower()}_observed")

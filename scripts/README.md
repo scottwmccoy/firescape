@@ -88,8 +88,26 @@ looks, and the repo CLAUDE.md for the DEM-resampling traps.
 
 | script | what it does |
 |---|---|
-| `p5_inventory_pack.py` | builds the manual-survey package: 4.24 M-segment GPKG, regionated KMZ tiles by HU8, hot-segment layer, priority sheet |
+|  `p5_inventory_pack.py` | builds the manual-survey package: 4.24 M-segment GPKG, regionated KMZ tiles by HU8, hot-segment layer, priority sheet |
 | `p2_hindcast_batch.py`, `p2_hindcast_fig.py` | observed-severity hindcasts for historic fires (M6 validation). The batch script invokes the figure script **by path** — keep them in the same directory |
+
+### Active-fire pipeline (`p8_*`, `p9_*`)
+
+Every stage takes a **fire name** and a calibration version, so any WFIGS fire
+runs through unchanged — Stallion and Bug were both done this way:
+
+```bash
+python scripts/products/p8_fire_forecast.py       Bug statewide_v1_1  # pre-fire, simulated severity
+python scripts/products/p8_fire_storm_response.py Bug statewide_v1_1  # score vs observed MRMS rainfall
+python scripts/products/p9_fire_observed.py       Bug statewide_v1_1  # re-assess on BRISK measured severity
+python scripts/figures/p8_fire_forecast_map.py    Bug statewide_v1_1
+python scripts/figures/p8_fire_storm_map.py       Bug statewide_v1_1
+python scripts/figures/p9_fire_observed_map.py    Bug statewide_v1_1
+```
+
+`p9_fire_observed.py` needs no MTBS bundle: it pulls near-real-time dNBR through
+`stormscape.burn` (CIMSS BRISK) and passes it to `assess.run_observed` via its
+`perimeter=` / `dnbr=` injection, so a fire can be assessed while still burning.
 
 ## Deliberately not kept
 
