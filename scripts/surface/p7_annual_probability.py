@@ -46,7 +46,7 @@ from firescape import annualprob, paths
 VERSION = sys.argv[1] if len(sys.argv) > 1 else "statewide_v1_1"
 OUT = paths.products_dir("prefire", VERSION)
 GPKG = OUT / f"{VERSION}_basins.gpkg"
-BP_TIF = paths.raw_dir("wrc") / "BP_NV.tif"
+BP_DIR = paths.raw_dir("wrc")
 BP_RES = 270.0        # FSim's real cell size; the 30 m raster is an upsample
 
 if not GPKG.exists():
@@ -61,23 +61,47 @@ LAYER = str(pyogrio.list_layers(GPKG)[0][0])
 g = read_dataframe(GPKG, layer=LAYER)
 print(f"  {len(g):,} basins (layer {LAYER!r})", flush=True)
 
-# --- BP onto a 270 m grid, warped exactly once from native ------------------
-with rasterio.open(BP_TIF) as src:
-    w, s, e, n = src.bounds
-    width = int(np.ceil((e - w) / BP_RES))
-    height = int(np.ceil((n - s) / BP_RES))
-    tr = from_origin(w, n, BP_RES, BP_RES)
-    bp = np.full((height, width), np.nan, dtype="float32")
-    arr = src.read(1).astype("float32")
-    if src.nodata is not None:
-        arr[arr == np.float32(src.nodata)] = np.nan
-    arr[arr < 0] = np.nan
-    reproject(arr, bp, src_transform=src.transform, src_crs=src.crs,
-              src_nodata=np.nan, dst_transform=tr, dst_crs=src.crs,
-              dst_nodata=np.nan, resampling=Resampling.average)
-    del arr
+# --- BP onto a 270 m grid, each state warped exactly once from native -------
+# The WRC rasters are clipped to state lines, but HU10 units straddle them, so
+# every neighbouring state that a basin reaches into has to be mosaicked in --
+# otherwise 13.6% of basins come back without a P(F) purely from the cut.
+tifs = sorted(BP_DIR.glob("BP_*.tif"))
+if not tifs:
+    sys.exit(f"no BP rasters in {BP_DIR}; run scripts/stage/p7_stage_burnprob.py")
+print(f"burn probability from {len(tifs)} state raster(s): "
+      f"{[p.stem for p in tifs]}", flush=True)
+
+bounds, crs0 = None, None
+for t in tifs:
+    with rasterio.open(t) as src:
+        if crs0 is None:
+            crs0 = src.crs
+        elif src.crs != crs0:
+            sys.exit(f"{t.name} is {src.crs}, expected {crs0}")
+        b = src.bounds
+        bounds = b if bounds is None else (
+            min(bounds[0], b[0]), min(bounds[1], b[1]),
+            max(bounds[2], b[2]), max(bounds[3], b[3]))
+w, s, e, n = bounds
+width = int(np.ceil((e - w) / BP_RES))
+height = int(np.ceil((n - s) / BP_RES))
+tr = from_origin(w, n, BP_RES, BP_RES)
+bp = np.full((height, width), np.nan, dtype="float32")
+for t in tifs:
+    with rasterio.open(t) as src:
+        arr = src.read(1).astype("float32")
+        if src.nodata is not None:
+            arr[arr == np.float32(src.nodata)] = np.nan
+        arr[arr < 0] = np.nan
+        piece = np.full((height, width), np.nan, dtype="float32")
+        reproject(arr, piece, src_transform=src.transform, src_crs=src.crs,
+                  src_nodata=np.nan, dst_transform=tr, dst_crs=crs0,
+                  dst_nodata=np.nan, resampling=Resampling.average)
+        put = np.isnan(bp) & np.isfinite(piece)   # first-valid-wins across seams
+        bp[put] = piece[put]
+        del arr, piece
 print(f"BP at {BP_RES:g} m: {bp.shape}, "
-      f"{np.isfinite(bp).mean():.1%} covered, "
+      f"{np.isfinite(bp).mean():.1%} of the mosaic covered, "
       f"mean {np.nanmean(bp):.5f}, max {np.nanmax(bp):.5f}", flush=True)
 
 # --- sample at basin representative points ---------------------------------

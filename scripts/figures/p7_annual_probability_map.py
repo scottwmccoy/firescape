@@ -10,6 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LogNorm
+from matplotlib.ticker import FixedLocator, FuncFormatter
 from pyogrio import read_dataframe
 
 import geopandas as gpd
@@ -53,6 +54,15 @@ for ax, (col, cmap, _, title) in zip(axes, panels):
                    interpolation="antialiased")
     cb = fig.colorbar(im, ax=ax, shrink=0.55, pad=0.02)
     cb.ax.tick_params(labelsize=8)
+    if col == "P_RgtT":
+        # This panel lives between about 0.01 and 0.9, where LogNorm's default
+        # scientific notation (2x10^-1) is harder to read than 0.2.
+        cand = [0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        cb.ax.yaxis.set_major_locator(
+            FixedLocator([t for t in cand if lo <= t <= hi]))
+        cb.ax.yaxis.set_minor_locator(FixedLocator([]))
+        cb.ax.yaxis.set_major_formatter(FuncFormatter(
+            lambda x, _: f"{x:.3f}".rstrip("0").rstrip(".") if x > 0 else ""))
     mc.draw_context(ax, ctx, label_rivers=False)
     nv.boundary.plot(ax=ax, color="black", linewidth=1.0, zorder=8)
     mc.style_axes(ax, extent)
