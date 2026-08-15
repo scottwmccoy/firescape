@@ -88,6 +88,13 @@ the statewide figure 2026-08-14.
   result-dict contract (`fields/transform/crs/profile/meta`); outputs named
   `<key>_<field>.tif` + `<key>_aoi.geojson`; DEMs EPSG:5070; figures in auto-UTM;
   lazy-import heavy deps; offline tests only (synthetic fixtures).
+- `firescape/` is library code; `scripts/` is the **as-run pipeline** that
+  produced the products (see scripts/README.md). Drivers there are resumable
+  and exit **42** to mean "budget hit, run me again"; the `.sh` wrappers loop
+  on that. If a script starts getting imported, promote it into the package.
+- Figures go through `firescape.plotting` (house style: geographic axes, data
+  alpha ≤ 0.6, no graticule, colourblind-safe ramps, PNG 300 dpi + PDF) and
+  `firescape.relief` (hillshade). Never restyle a figure in a one-off script.
 - Calibration values are TOML **files** (firescape/data/calibration/), never
   Python constants; adopted calibrations get committed. Region polygons are
   GeoJSON keyed by `region` name; TOML sections use the same names.
