@@ -221,11 +221,19 @@ def draw_context(ax, ctx, *, label_cities: bool = True,
     """Draw reference context onto an axis, in reading order back to front."""
     import matplotlib.patheffects as pe
 
-    ctx["counties"].boundary.plot(ax=ax, color="0.35", linewidth=0.35,
-                                  alpha=0.7, zorder=3)
-    ctx["lakes"].plot(ax=ax, color="#a6cee3", alpha=0.8, zorder=3.1)
-    ctx["rivers"].plot(ax=ax, color="#2c7fb8", linewidth=0.7, alpha=0.9,
-                       zorder=3.2)
+    # Every layer is checked for emptiness first. Plotting an empty
+    # GeoDataFrame raises "aspect must be finite and positive" rather than
+    # drawing nothing, and empty layers are normal, not exceptional: the Elko
+    # window has no Natural Earth lake in it and the Nevada National Security
+    # Site has no named perennial stream at all.
+    if len(ctx["counties"]):
+        ctx["counties"].boundary.plot(ax=ax, color="0.35", linewidth=0.35,
+                                      alpha=0.7, zorder=3)
+    if len(ctx["lakes"]):
+        ctx["lakes"].plot(ax=ax, color="#a6cee3", alpha=0.8, zorder=3.1)
+    if len(ctx["rivers"]):
+        ctx["rivers"].plot(ax=ax, color="#2c7fb8", linewidth=0.7, alpha=0.9,
+                           zorder=3.2)
 
     roads = ctx["roads"]
     if "kind" in roads.columns:

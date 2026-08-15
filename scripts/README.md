@@ -80,9 +80,9 @@ CDF refit.
 (historic MTBS perimeters over the hazard map), `p3_experiment_fig.py`,
 `m4_maps.py` / `m4v2_maps.py` / `v1v2_maps.py` (pilot).
 
-### Urban corridors
+### Regional zooms
 
-Two sheets over the same two windows, in two formats:
+Two sheets over each window, in two formats:
 
 | script | format | asks |
 |---|---|---|
@@ -91,15 +91,42 @@ Two sheets over the same two windows, in two formats:
 
 ```bash
 python scripts/figures/p10_urban_zooms.py          reno_carson statewide_v1_2
-python scripts/figures/p12_urban_zoom_forecast.py  las_vegas   statewide_v1_2
+python scripts/figures/p12_urban_zoom_forecast.py  ely_white_pine statewide_v1_2
 ```
+
+With no window argument, either script renders all of them. The windows:
+
+| key | what it covers | note |
+|---|---|---|
+| `reno_carson` | Pyramid Lake → Reno–Sparks → Carson Valley, Sierra crest | crosses into CA |
+| `las_vegas` | Clark County, Spring Mountains, Colorado River | 17.6% KF gap |
+| `elko_corridor` | Carlin–Elko–Wells, Ruby Mountains | highest moderate share (26%) |
+| `winnemucca_battle_mtn` | western I-80, Sonoma/Osgood/Shoshone ranges | |
+| `nnss` | Nevada National Security Site, Beatty, Amargosa | **52% KF gap** |
+| `ely_white_pine` | Egan/Schell Creek ranges, Snake Range, Great Basin NP | highest conditional hazard near people |
+| `lincoln_caliente` | Meadow Valley Wash, Rainbow Canyon, US-93 | UP mainline exposure |
+| `north_elko` | Jarbidge, Mountain City, Owyhee, Jackpot | shortest annual return intervals |
+
+The last four were chosen from a scan of hazard within ~20 km of every Nevada
+town outside the first four; `Fallon` and `Tonopah` were checked and rejected
+(0.4% and 1.1% moderate).
 
 Both import `_corridors.py`, which owns the window bounds, the place and
 watercourse whitelists, the label styling and the figure sizing — so the two
-sheets stay comparable and a new corridor is one dict entry. The forecast
-sheet reads the **per-unit** `*_segments.gpkg` files (307k segments in Reno,
-604k in Las Vegas) rather than the merged basin layer, and repeats the merge's
-KF gap fill so the two formats agree.
+sheets stay comparable and a new region is one dict entry. The forecast sheet
+reads the **per-unit** `*_segments.gpkg` files (307k segments in Reno, 588k in
+Las Vegas) rather than the merged basin layer, and repeats the merge's KF gap
+fill so the two formats agree.
+
+Two costs worth knowing before adding a window:
+
+* The NHD named-stream query runs **75 s to 9 min** and sits at 0% CPU the
+  whole time, blocked on the network — it looks exactly like a hang. It caches
+  per window, **unfiltered**, so revising the `rivers` whitelist afterwards is
+  free.
+* Where SSURGO never mapped the soil, K is filled at the statewide median.
+  That is 0.0% over Elko County but 52% over the Test Site, so above 5% the
+  sheet says so in its own title rather than only in the summary JSON.
 
 All of them draw through `firescape.plotting` (house style) and
 `firescape.relief` (hillshade); see those modules before changing how a figure

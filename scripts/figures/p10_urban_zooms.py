@@ -1,10 +1,11 @@
-"""Regional zooms over Nevada's two urban corridors -- annualized triptych.
+"""Regional zooms over Nevada -- annualized triptych.
 
 The statewide sheet answers "where in the state", which is the wrong question
-for a planner in Washoe or Clark County. These render the same v1.2 product at
-a scale where an individual drainage above a subdivision is legible: a ~50 m
-display grid, hillshade shaded at 30 m, sub-degree graticule ticks, and every
-incorporated place labelled rather than the statewide city whitelist.
+for a planner in Washoe or White Pine County. These render the same v1.2
+product at a scale where an individual drainage above a subdivision is
+legible: a ~50 m display grid, hillshade shaded at 30 m, sub-degree graticule
+ticks, and every incorporated place labelled rather than the statewide city
+whitelist. The windows themselves live in :mod:`_corridors`.
 
 The same triptych as the statewide sheet -- the two factors and their product.
 Probability bars are labelled as **return intervals** ("1 in 300 yr"), the form
@@ -15,11 +16,13 @@ The companion sheet is :mod:`p12_urban_zoom_forecast`, which drops the annual
 rate and asks the fire-forecast question instead. Both share their window,
 labels and line styles through :mod:`_corridors`.
 
-Both corridors deliberately run past the state line: the drainages above the
-Sierra front and the Spring Mountains do not stop at a border, P(F) now covers
-the neighbouring states, and the Lake Tahoe / Truckee River units on the
-California side were added so that basin is whole rather than clipped at the
-border.
+Several windows deliberately run past the state line: the drainages above the
+Sierra front, the Spring Mountains, the Snake Range and the Jarbidge country
+do not stop at a border, P(F) now covers the neighbouring states, and the Lake
+Tahoe / Truckee River units on the California side were added so that basin is
+whole rather than clipped. Coverage still thins outside Nevada, because the
+unit inventory is "every HU10 that touches the state" -- that visible edge is
+the modelled domain, not a change in the hazard.
 """
 import json
 import sys
@@ -59,7 +62,7 @@ for key in todo:
     basins = read_dataframe(
         GP, bbox=bbox5070,
         columns=["H_24mmh", "P_24mmh", "P_annual", "P_F", "P_RgtT",
-                 "I15_50"]).to_crs("EPSG:4326")
+                 "I15_50", "kf_filled"]).to_crs("EPSG:4326")
     if basins.empty:
         sys.exit(f"no basins within {bounds}")
     print(f"{len(basins):,} basins in the window", flush=True)
@@ -76,10 +79,7 @@ for key in todo:
 
     counts = basins["H_24mmh"].value_counts()
     med = float(np.nanmedian(basins["P_annual"]))
-    panel_h = 9.4
-    fig, axes = plt.subplots(
-        1, 3, figsize=(cor.figure_width(bounds, 3, panel_h=panel_h),
-                       panel_h + 2.1), dpi=140)
+    fig, axes = plt.subplots(1, 3, figsize=cor.figure_size(bounds, 3), dpi=140)
 
     # Same triptych as the statewide sheet: the two factors, then the product.
     spec = [("P_F", "magma", "P(F) — annual burn probability\n"
@@ -114,14 +114,16 @@ for key in todo:
         ax.set_title(title, fontsize=10.5)
         cor.decorate(ax, C, extent, step=z["step"])
 
+    kf_frac = float(basins["kf_filled"].astype(bool).mean())
     fig.tight_layout(w_pad=0.4)
-    cor.suptitle(fig, [
+    cor.suptitle(fig, [line for line in (
         f"{z['label']} — firescape {VERSION} pre-fire debris-flow hazard",
         z["blurb"],
         f"{len(basins):,} basins · median ≈ 1 in {1/med:,.0f} yr · "
         f"{int(counts.get(2, 0)):,} moderate, {int(counts.get(3, 0)):,} high "
         "at the 24 mm/h reference storm",
-    ])
+        cor.kf_note(kf_frac, "basins"),
+    ) if line])
     mc.save(fig, f"zoom_{key}_{VERSION}")
     plt.close(fig)
 

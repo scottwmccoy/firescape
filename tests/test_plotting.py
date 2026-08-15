@@ -155,6 +155,29 @@ def test_draw_context_plots_every_layer(ax, tmp_path):
     assert any("Reno" == t.get_text() for t in ax.texts)
 
 
+def test_draw_context_tolerates_empty_layers(tmp_path, monkeypatch):
+    """An arid window has no lake and no named perennial stream.
+
+    Plotting an empty GeoDataFrame raises "aspect must be finite and positive"
+    rather than drawing nothing, so an empty layer used to take the whole
+    figure down -- which is the normal case for the Elko and NNSS windows,
+    not an exceptional one.
+    """
+    monkeypatch.setattr(paths, "raw_dir", lambda *a: tmp_path / "raw")
+    cache = tmp_path / "ctx"
+    cache.mkdir()
+    fig, ax = plt.subplots()
+
+    empty = gpd.GeoDataFrame({"name": [], "kind": []},
+                             geometry=[], crs="EPSG:4326")
+    for name in ("counties", "rivers", "lakes", "roads", "places"):
+        empty.to_file(cache / f"context_{name}.geojson", driver="GeoJSON")
+    ctx = plotting.fetch_context((-116.5, 36.5, -115.5, 37.5), cache_dir=cache)
+
+    plotting.draw_context(ax, ctx)           # must not raise
+    plt.close(fig)
+
+
 # --- output ----------------------------------------------------------------
 
 def test_save_writes_pdf_only_by_default(tmp_path, monkeypatch):

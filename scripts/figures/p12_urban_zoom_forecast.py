@@ -1,4 +1,4 @@
-"""Urban corridors in the fire-forecast format: the drainage network itself.
+"""Regional zooms in the fire-forecast format: the drainage network itself.
 
 :mod:`p10_urban_zooms` answers "how often should this happen", which is the
 right question for a hazard rate but the wrong one for anybody deciding where
@@ -138,10 +138,7 @@ for key in todo:
     med_thr = float(np.nanmedian(thr))
     net_km = float(seg.to_crs("EPSG:5070").length.sum() / 1e3)
 
-    panel_h = 9.4
-    fig, axes = plt.subplots(
-        1, 2, figsize=(cor.figure_width(bounds, 2, panel_h=panel_h),
-                       panel_h + 2.1), dpi=140)
+    fig, axes = plt.subplots(1, 2, figsize=cor.figure_size(bounds, 2), dpi=140)
 
     for ax, mode in zip(axes, ("threshold", "hazard")):
         ax.imshow(hs, cmap="gray", vmin=0, vmax=1, extent=im_extent, zorder=0)
@@ -181,7 +178,7 @@ for key in todo:
 
     q = np.nanpercentile(thr, [5, 95])
     fig.tight_layout(w_pad=0.4)
-    cor.suptitle(fig, [
+    cor.suptitle(fig, [line for line in (
         f"{z['label']} — firescape {VERSION} pre-fire debris-flow forecast",
         f"{z['blurb']} · {len(seg):,} stream segments, "
         f"{net_km:,.0f} km of channel",
@@ -189,7 +186,8 @@ for key in todo:
         f"(5–95%: {q[0]:.0f}–{q[1]:.0f}) · "
         f"{int(counts.get(2, 0)):,} moderate, {int(counts.get(3, 0)):,} high "
         "— conditional on the basin burning",
-    ])
+        cor.kf_note(float(gap.mean()), "segments"),
+    ) if line])
     mc.save(fig, f"zoom_{key}_forecast_{VERSION}")
     plt.close(fig)
 
