@@ -87,6 +87,10 @@ ZOOMS = {
         rivers=("Steptoe Creek", "Duck Creek", "Snake Creek", "Baker Creek",
                 "Lehman Creek", "White River"),
         lakes=(),
+        # Great Basin NP: the Snake Range canyons above Baker are steep, and
+        # park roads and campgrounds sit in them. Clips to 312 km2, matching
+        # the park's published area.
+        agencies=("NPS",),
         label="Ely – White Pine County",
         blurb="the Egan and Schell Creek ranges either side of Steptoe "
               "Valley at Ely, Ruth and McGill, east to the Snake Range and "
@@ -98,6 +102,9 @@ ZOOMS = {
         bounds=(-115.45, 36.90, -113.95, 38.20), step=0.25, res=0.0005,
         rivers=("Meadow Valley Wash", "White River", "Muddy River"),
         lakes=(),
+        # 190 km of Union Pacific mainline, most of it in Rainbow Canyon --
+        # the reason this window was chosen over a purely hazard-ranked one.
+        rail=True,
         label="Caliente – Lincoln County",
         blurb="Meadow Valley Wash and Rainbow Canyon through Caliente, "
               "Panaca and Pioche, with the Delamar and Clover mountains and "
@@ -245,10 +252,25 @@ def context(key):
             rd.to_file(rd_path, driver="GeoJSON")
             ctx["roads"] = rd
 
+    # Railroads, where the window asks. TIGER layer 9, which roads() does not
+    # fetch -- rail is not a road tier. Only 27 features over the Caliente
+    # window, but they are the Union Pacific mainline up Rainbow Canyon, which
+    # is the exposure that window is about.
+    rail = None
+    if z.get("rail"):
+        rail_path = inter / "context_rail.geojson"
+        if rail_path.exists():
+            rail = gpd.read_file(rail_path)
+        else:
+            from stormscape import refdata
+            rail = refdata._query(refdata.TIGER_TRANS, 9, bounds,
+                                  out_fields="NAME").to_crs("EPSG:4326")
+            rail.to_file(rail_path, driver="GeoJSON")
+
     nv = gpd.read_file(paths.raw_dir("boundaries") / "nv_state.geojson"
                        ).to_crs("EPSG:4326")
     return dict(ctx=ctx, rivers=rv_all, river_labels=rv_lab, lake_labels=lk_lab,
-                places=places_for(bounds), state=nv,
+                places=places_for(bounds), state=nv, rail=rail,
                 agencies=federal_lands(bounds, z.get("agencies", ()), inter))
 
 
@@ -272,6 +294,8 @@ AGENCY_STYLE = {
     "DOD": dict(label="Nellis Air Force Range / Creech AFB (DoD)",
                 color="#333333", linewidth=1.1, linestyle=(0, (5, 3)),
                 casing=2.6),
+    "NPS": dict(label="Great Basin National Park (NPS)",
+                color="#00A0B0", linewidth=1.9, linestyle="-", casing=3.6),
 }
 
 
@@ -295,7 +319,11 @@ def federal_lands(bounds, agencies, inter):
                 "geometryType": "esriGeometryEnvelope",
                 "inSR": 4326, "outSR": 4326,
                 "spatialRel": "esriSpatialRelIntersects",
-                "where": f"ADMIN_DEPT_CODE='{dept}'",
+                # Agency, not department: NPS lives under DOI alongside BLM,
+                # so a department filter would return every acre of BLM land
+                # in the window instead of the park. DOE and DOD carry the
+                # same code in both fields, so this selects them unchanged.
+                "where": f"ADMIN_AGENCY_CODE='{dept}'",
                 "outFields": "ADMIN_DEPT_CODE,ADMIN_AGENCY_CODE",
                 "maxAllowableOffset": 0.0008,
                 "returnGeometry": "true", "f": "geojson"})
@@ -335,6 +363,20 @@ def decorate(ax, C, extent, *, step):
     # the window in code -- see federal_lands -- so the axes limits hide the
     # parts outside rather than drawing the frame as a boundary.
     handles = []
+    rail = C.get("rail")
+    if rail is not None and len(rail):
+        # The conventional rail symbol, in two passes: a solid line with a
+        # dashed white overlay for the ties. Drawn ABOVE the hazard layer --
+        # unlike roads, which stay beneath it. The whole point of putting rail
+        # on the Caliente sheet is to see the mainline against the flagged
+        # tributaries it runs past, and 190 km of thin line hides nothing.
+        rail.plot(ax=ax, color="#111111", linewidth=1.5, zorder=8.3)
+        rail.plot(ax=ax, color="white", linewidth=0.85, zorder=8.31,
+                  linestyle=(0, (1.4, 2.4)))
+        name = str(rail["NAME"].dropna().iloc[0]) if "NAME" in rail else "railroad"
+        handles.append(Line2D([0], [0], color="#111111", lw=1.5,
+                              label=f"{name} mainline"))
+
     for dept, g in (C.get("agencies") or {}).items():
         s = AGENCY_STYLE[dept]
         g.boundary.plot(ax=ax, color=s["color"], linewidth=s["linewidth"],
