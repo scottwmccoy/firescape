@@ -38,12 +38,16 @@ SRC_NODATA, SRC_DIRECT, SRC_FALLBACK = 0, 1, 2
 
 
 #: Packaged CDF tables. "staley2018" is the published western-US release;
-#: "nv_merged" is that release with Nevada era-matched refits overriding the
-#: classes we have local data for (see data/staley2018/PROVENANCE.md).
+#: "nv_merged" is that release with Nevada refits from 16 pilot-area fires;
+#: "nv_statewide" refits 56 classes from all 123 era-matched calibration fires
+#: and is the current default for Nevada work -- held-out error 42.1 dNBR
+#: against 46.4 (nv_merged) and 52.7 (Staley), and the gap widens in the upper
+#: tail where the BARC break test lives (see data/staley2018/PROVENANCE.md).
 PACKAGED_TABLES = {
     "staley2018": "CDFParameters.txt",
     "nv_merged": "CDFParameters_NV_merged.csv",
     "nv_refit": "CDFParameters_NV_refit.csv",
+    "nv_statewide": "CDFParameters_NV_statewide.csv",
 }
 
 
