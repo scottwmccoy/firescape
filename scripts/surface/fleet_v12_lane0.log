@@ -2,5 +2,6 @@ Central Basin and Range: pdsim 0.47, breaks (125.0, 325.0, 500.0)
 Mojave Basin and Range: pdsim 0.6, breaks (125.0, 388.0, 500.0)
 Northern Basin and Range: pdsim 0.43, breaks (125.0, 355.0, 500.0)
 Sierra Nevada: pdsim 0.47, breaks (125.0, 312.0, 500.0)
-1809020204 Headwaters Amargosa Ri Mojave Basin a    373 km2 ->  5224 segs (125s)
-1606001311 1606001311             Central Basin     376 km2 ->  3930 segs (61s)
+1606000307 Lower Peavine Creek    Central Basin    1652 km2 -> 14553 segs (265s)
+
+lane 0/2: 296 done, 0 pending, 0 failed, 266s

@@ -96,7 +96,7 @@ summary = {
     "total_area_km2": float(basins["Area_km2"].sum()),
     "calibration": "statewide_v1_2 per-region, dispersed severity sigma=0.91",
     "volume_model": "RANGES (headline); Gartner-14 soft-Bmh retained as *_g14",
-    "cdf_table": "nv_merged",
+    "cdf_table": "nv_statewide",
     "kf": "SSURGO (statewide), gaps median-filled and flagged",
     "likelihood": {k: float(v) for k, v in basins["P_24mmh"].describe().items()},
     "hazard_class": {int(c): int((h == c).sum()) for c in (1, 2, 3)},
