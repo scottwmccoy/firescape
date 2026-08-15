@@ -237,6 +237,13 @@ def draw_context(ax, ctx, *, label_cities: bool = True,
 
     roads = ctx["roads"]
     if "kind" in roads.columns:
+        # Local roads only appear where a figure asked for them (TIGER's local
+        # layer is a separate query and ~200x the feature count). Drawn first
+        # and faintest, so the highways still read as highways over them.
+        local = roads[roads["kind"] == "local"]
+        if len(local):
+            local.plot(ax=ax, color="0.3", linewidth=0.15, alpha=0.55,
+                       zorder=3.25)
         secondary = roads[roads["kind"] == "secondary"]
         if len(secondary):
             secondary.plot(ax=ax, color="0.25", linewidth=0.3, alpha=0.55,

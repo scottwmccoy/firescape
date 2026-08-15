@@ -62,10 +62,16 @@ ZOOMS = {
         label="Winnemucca – Battle Mountain",
         blurb="the western I-80 corridor from Imlay to Beowawe, with the "
               "Sonoma, Osgood and Shoshone ranges and Paradise Valley"),
+    # The only window that draws local roads and the federal land boundaries.
+    # Both are specific to what this sheet is for: the access network *is* the
+    # exposure here -- there is no town to speak of -- and a hazard map of the
+    # Test Site is hard to read without knowing where the Site ends.
     "nnss": dict(
         bounds=(-117.00, 36.30, -115.30, 37.60), step=0.25, res=0.0005,
         rivers=("Amargosa River",),
         lakes=(),
+        local_roads=True,
+        agencies=("DOE", "DOD"),
         label="Nevada National Security Site",
         blurb="Pahute and Rainier mesas, Yucca and Frenchman flats and "
               "Mercury, west to Beatty and the Amargosa Desert, south to "
@@ -225,10 +231,90 @@ def context(key):
     lk_lab = (lk[lk["name"].astype(str).isin(z["lakes"])]
               if "name" in lk else lk.iloc[:0])
 
+    # Local roads, where the window asks for them. TIGER's local layer is a
+    # separate query and about 200x the feature count (8,196 against 37 over
+    # the Test Site), so it is opt-in and cached separately from the
+    # primary/secondary roads every other window uses.
+    if z.get("local_roads"):
+        rd_path = inter / "context_roads_local.geojson"
+        if rd_path.exists():
+            ctx["roads"] = gpd.read_file(rd_path)
+        else:
+            from stormscape import refdata
+            rd = refdata.roads(bounds, local=True).to_crs("EPSG:4326")
+            rd.to_file(rd_path, driver="GeoJSON")
+            ctx["roads"] = rd
+
     nv = gpd.read_file(paths.raw_dir("boundaries") / "nv_state.geojson"
                        ).to_crs("EPSG:4326")
     return dict(ctx=ctx, rivers=rv_all, river_labels=rv_lab, lake_labels=lk_lab,
-                places=places_for(bounds), state=nv)
+                places=places_for(bounds), state=nv,
+                agencies=federal_lands(bounds, z.get("agencies", ()), inter))
+
+
+#: BLM's national Surface Management Agency service. The Nevada National
+#: Security Site is administered by DOE, not DoD, so it is absent from the
+#: Census military-installation file -- that carries Nellis Air Force Range
+#: and Creech AFB but not the Site. This service has it: the DOE polygon
+#: clips to 3,515 km2 in the window, against a published Site area of ~3,520.
+SMA_URL = ("https://gis.blm.gov/arcgis/rest/services/lands/"
+           "BLM_Natl_SMA_Cached_without_PriUnk/MapServer/1/query")
+
+#: How each agency's boundary is drawn. The subject of the sheet gets a
+#: saturated cyan, chosen because it is the one strong hue absent from BOTH
+#: panels: plasma_r runs yellow-salmon-purple-blue and the hazard classes are
+#: green/orange/red. Okabe-Ito reddish purple was tried first and disappeared
+#: into plasma's salmon midtones, which is most of this window. Its neighbour
+#: gets neutral dashes. Both take a white casing to survive either ramp.
+AGENCY_STYLE = {
+    "DOE": dict(label="Nevada National Security Site (DOE)",
+                color="#00A0B0", linewidth=1.9, linestyle="-", casing=3.6),
+    "DOD": dict(label="Nellis Air Force Range / Creech AFB (DoD)",
+                color="#333333", linewidth=1.1, linestyle=(0, (5, 3)),
+                casing=2.6),
+}
+
+
+def federal_lands(bounds, agencies, inter):
+    """Surface-management polygons for the window, one per agency code.
+
+    Simplified server-side to ~70 m, which is finer than the display grid and
+    keeps each polygon under 50 kB. Returns ``{}`` when a window asks for
+    none, which is every window but the Test Site.
+    """
+    import json
+    import urllib.parse
+    import urllib.request
+
+    out = {}
+    for dept in agencies:
+        path = inter / f"context_sma_{dept}.geojson"
+        if not path.exists():
+            q = urllib.parse.urlencode({
+                "geometry": ",".join(str(b) for b in bounds),
+                "geometryType": "esriGeometryEnvelope",
+                "inSR": 4326, "outSR": 4326,
+                "spatialRel": "esriSpatialRelIntersects",
+                "where": f"ADMIN_DEPT_CODE='{dept}'",
+                "outFields": "ADMIN_DEPT_CODE,ADMIN_AGENCY_CODE",
+                "maxAllowableOffset": 0.0008,
+                "returnGeometry": "true", "f": "geojson"})
+            with urllib.request.urlopen(f"{SMA_URL}?{q}", timeout=180) as r:
+                payload = json.load(r)
+            if not payload.get("features"):
+                print(f"  no {dept} land in the window", flush=True)
+                continue
+            path.write_text(json.dumps(payload))
+        # Deliberately NOT clipped to the window. The service returns whole
+        # features -- verified by re-querying with an envelope twice the size
+        # and getting identical bounds and area -- so clipping here would add
+        # the window edge to the polygon and draw it as if it were an agency
+        # boundary. The axes limits do the clipping instead, which only ever
+        # hides a real edge rather than inventing one.
+        g = gpd.read_file(path)
+        if len(g):
+            out[dept] = g
+    return out
 
 
 def decorate(ax, C, extent, *, step):
@@ -239,10 +325,27 @@ def decorate(ax, C, extent, *, step):
     them reads as a difference in the data.
     """
     import matplotlib.patheffects as pe
+    from matplotlib.lines import Line2D
 
     halo = [pe.withStroke(linewidth=1.6, foreground="white")]
     mc.draw_context(ax, C["ctx"], label_cities=False, label_rivers=False)
     C["state"].boundary.plot(ax=ax, color="black", linewidth=1.6, zorder=8)
+
+    # Federal land boundaries, where a window asks for them. Never clipped to
+    # the window in code -- see federal_lands -- so the axes limits hide the
+    # parts outside rather than drawing the frame as a boundary.
+    handles = []
+    for dept, g in (C.get("agencies") or {}).items():
+        s = AGENCY_STYLE[dept]
+        g.boundary.plot(ax=ax, color=s["color"], linewidth=s["linewidth"],
+                        linestyle=s["linestyle"], zorder=8.5,
+                        path_effects=[pe.withStroke(linewidth=s["casing"],
+                                                    foreground="white")])
+        handles.append(Line2D([0], [0], color=s["color"], lw=s["linewidth"],
+                              linestyle=s["linestyle"], label=s["label"]))
+    if handles:
+        ax.legend(handles=handles, loc="lower left", fontsize=7,
+                  framealpha=0.9, borderpad=0.5).set_zorder(9.5)
 
     for _, r in C["river_labels"].iterrows():
         ax.annotate(str(r["name"]), (r.geometry.x, r.geometry.y), fontsize=6.5,
