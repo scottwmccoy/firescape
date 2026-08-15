@@ -37,12 +37,21 @@ def _git_sha() -> str | None:
 def run_observed(event_id: str, *, dem_path: Path | None = None, dem=None,
                  kf_polygons: Path | None = None,
                  i15_mmh: float = I15_REFERENCE_MMH, out_dir: Path | None = None,
-                 threshold_p: float = 0.5) -> dict:
-    """Run the observed-severity hazard chain for one downloaded MTBS fire.
+                 threshold_p: float = 0.5,
+                 perimeter=None, dnbr=None, barc_breaks=None) -> dict:
+    """Run the observed-severity hazard chain for one fire.
 
     ``dem`` injects a pre-built pfdf Raster covering the perimeter plus
     ``PERIMETER_BUFFER_M`` (the statewide tile-store seam, mirror of
     prefire.run_unit); ``dem_path`` remains the pilot route.
+
+    By default severity and perimeter come from a downloaded MTBS bundle. Pass
+    **both** ``perimeter`` (path or GeoDataFrame) and ``dnbr`` (path or pfdf
+    Raster, on the **x1000** scale pfdf expects) to assess a fire that has no
+    bundle -- one still burning, say, from a near-real-time composite such as
+    CIMSS BRISK via ``stormscape.burn``. ``event_id`` is then only a label.
+    ``barc_breaks`` overrides the (125, 250, 500) dNBR class breaks, e.g. with
+    a region's calibrated breaks.
 
     Returns a dict with the Segments object, per-segment arrays, and paths of
     everything written.
@@ -52,11 +61,22 @@ def run_observed(event_id: str, *, dem_path: Path | None = None, dem=None,
     from pfdf.raster import Raster
 
     filters = FilterDefaults()
-    bundle = mtbs.fire_bundle(event_id)
+    injected = perimeter is not None and dnbr is not None
+    if perimeter is not None and dnbr is None:
+        raise ValueError("pass dnbr alongside perimeter; severity has no source")
+    bundle = None if injected else mtbs.fire_bundle(event_id)
     out_dir = Path(out_dir) if out_dir else paths.products_dir("assess", event_id.upper())
 
     # --- domain: burn perimeter (+buffer) on the DEM grid -------------------
-    perim_gdf = gpd.read_file(bundle["burn_area"])
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if injected:
+        perim_gdf = (perimeter if isinstance(perimeter, gpd.GeoDataFrame)
+                     else gpd.read_file(perimeter))
+        perim_src = out_dir / "_perimeter.geojson"
+        perim_gdf.to_file(perim_src, driver="GeoJSON")   # from_polygons wants a path
+    else:
+        perim_src = bundle["burn_area"]
+        perim_gdf = gpd.read_file(perim_src)
     import rasterio
 
     if dem is None:
@@ -78,10 +98,9 @@ def run_observed(event_id: str, *, dem_path: Path | None = None, dem=None,
         res = dem.resolution(units="meters")
     except TypeError:
         res = dem.resolution
-    perim = Raster.from_polygons(bundle["burn_area"], bounds=dem, resolution=res)
+    perim = Raster.from_polygons(perim_src, bounds=dem, resolution=res)
     perim = match_grid(perim, dem)
     domain_path = out_dir / "_domain.geojson"
-    out_dir.mkdir(parents=True, exist_ok=True)
     domain_gdf.to_file(domain_path, driver="GeoJSON")
     domain = Raster.from_polygons(domain_path, bounds=dem, resolution=res)
     domain = match_grid(domain, dem)
@@ -91,12 +110,17 @@ def run_observed(event_id: str, *, dem_path: Path | None = None, dem=None,
     n0 = segments.size
 
     # --- severity (observed dnbr6 -> BARC4) --------------------------------
-    dnbr = match_grid(Raster.from_file(bundle["dnbr"]), dem, resampling="bilinear")
-    if "dnbr6" in bundle:
+    src = dnbr if injected else Raster.from_file(bundle["dnbr"])
+    dnbr_src_label = src if isinstance(src, (str, Path)) else "injected Raster"
+    if not isinstance(src, Raster):
+        src = Raster.from_file(src)
+    dnbr = match_grid(src, dem, resampling="bilinear")
+    if bundle is not None and "dnbr6" in bundle:
         dnbr6 = match_grid(Raster.from_file(bundle["dnbr6"]), dem, resampling="nearest")
         barc4_arr = mtbs.dnbr6_to_barc4(dnbr6.values)
-    else:  # BAER-delivered fires: estimate from dNBR with standard thresholds
-        est = pfdf_severity.estimate(dnbr)
+    else:  # BAER/near-real-time: estimate classes from dNBR directly
+        est = (pfdf_severity.estimate(dnbr, barc_breaks) if barc_breaks
+               else pfdf_severity.estimate(dnbr))
         barc4_arr = est.values.astype(np.uint8)
     barc4 = Raster.from_array(barc4_arr, spatial=dem, nodata=0)
     burned = pfdf_severity.mask(barc4, ["low", "moderate", "high"])
@@ -150,14 +174,19 @@ def run_observed(event_id: str, *, dem_path: Path | None = None, dem=None,
         "event_id": event_id.upper(),
         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "firescape_git_sha": _git_sha(),
-        "severity_source": "observed dnbr6" if "dnbr6" in bundle else "severity.estimate(observed dnbr)",
+        "severity_source": (
+            "observed dnbr6" if bundle is not None and "dnbr6" in bundle
+            else "severity.estimate(injected dnbr)" if injected
+            else "severity.estimate(observed dnbr)"),
         "i15_mmh": i15_mmh,
         "threshold_p": threshold_p,
         "filters": vars(filters) | {"note": "no developed-area filter (M1 scope)"},
         "perimeter_buffer_m": PERIMETER_BUFFER_M,
         "segments_initial": int(n0),
         "segments_kept": int(segments.size),
-        "inputs": {k: str(v) for k, v in bundle.items()},
+        "inputs": ({k: str(v) for k, v in bundle.items()} if bundle is not None
+                   else {"dnbr": str(dnbr_src_label), "perimeter": str(perim_src)}),
+        "barc_breaks": list(barc_breaks) if barc_breaks else None,
         "dem": str(dem_path) if dem_path else "injected (statewide tile store)",
         "kf_source": kf_source,
     }
