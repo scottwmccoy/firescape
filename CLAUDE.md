@@ -77,6 +77,11 @@ the statewide figure 2026-08-14.
 - NOAA Atlas 14 vol 1 grids: `hdsc.nws.noaa.gov/pub/hdsc/data/sw/sw{ARI}yr{DUR}ma[_ams].zip`
   (1000ths of inch; 1-yr exists as PDS only). NV = `sw`; CA sliver of pilot needs `ca`.
   Atlas 15: nothing covers NV yet (CONUS prelim ~Sept 2026, 1-h+ durations only).
+- Planet Data API (planetscope.py, probed 2026-08-15): basic auth, key as user.
+  Key resolution: `key=` arg → `$PL_API_KEY` → `~/.config/firescape/planet_api_key`
+  (0600; NEVER in repo/Box/memory). Account is on the NASA CSDA IDIQ pool —
+  quota effectively unbounded, but search first (free), order deliberately.
+  `clear_percent` (udm2-based) is the trustworthy cloud field, not `cloud_cover`.
 - ScienceBase 403s plain fetches — use curl/requests with a browser User-Agent.
 - BAER/SBS: NV fires are mostly BLM (ESR program, not USFS BAER) — query the
   burn-severity portal ImageServer by IRWIN ID; fallback = derive dNBR from
@@ -93,7 +98,7 @@ the statewide figure 2026-08-14.
   and exit **42** to mean "budget hit, run me again"; the `.sh` wrappers loop
   on that. If a script starts getting imported, promote it into the package.
 - Figures go through `firescape.plotting` (house style: geographic axes, data
-  alpha ≤ 0.6, no graticule, colourblind-safe ramps, PNG 300 dpi + PDF) and
+  alpha ≤ 0.6, no graticule, colourblind-safe ramps, PDF only since 2026-08-14) and
   `firescape.relief` (hillshade). Never restyle a figure in a one-off script.
 - Calibration values are TOML **files** (firescape/data/calibration/), never
   Python constants; adopted calibrations get committed. Region polygons are
