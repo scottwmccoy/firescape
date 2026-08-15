@@ -37,6 +37,24 @@ Pre-fire PFDF hazard tool for Nevada (USGS LHP award, Task 2/Deliverable 2, due
 | pysheds NoData | pysheds silently treats missing NoData as 0 — always set explicit nodata on Rasters |
 | MTBS classes | dnbr6 is SIX classes: 1=unburned-low 2=low 3=moderate 4=high **5=increased greenness (exclude) 6=non-mapping (nodata)** — not BARC4 |
 
+## DEM resampling + shaded relief (firescape/relief.py, tests/test_relief.py)
+
+Hillshading differentiates, so it is the loudest display of a resampling
+mistake. Inherited from stormscape's 2026-07-31 finding (a nearest warp inside
+`py3dep.get_dem` biased slope ~1.8° and halved plan curvature); re-learned on
+the statewide figure 2026-08-14.
+
+| Trap | Rule |
+|---|---|
+| Double resampling | Warp each tile **exactly once**, native grid → target, **bilinear**. A 1/4 `average` decimating pre-pass cost **2.2 m elevation RMS**. Never nearest for elevation; cubic overshoots cliffs into bright rims |
+| Tile seams | Mosaic elevations into one **continuous** surface *before* shading. Shading tiles separately puts a hard line at every boundary — the gradient kernel at a tile edge has no data past it. Read source windows with a ≥2-cell margin (stormscape's "+20 cells") |
+| Mushy terrain | Shade **finer** than the display grid, then average the *shaded* array down (as stormscape `plot._prepare_hillshade` does). Shading at display resolution halved texture: Laplacian roughness 0.045 vs 0.088 |
+| `LightSource.hillshade` | **Do not use.** Its contrast stretch rescales by the min/max of whatever array it is handed, so band-wise shading of a statewide DEM gives every band its own contrast — printing the very seams above. Use `relief.shade` (fixed map; flat ground = sin(altitude)) |
+| Coverage gaps | Set uncovered ground to the flat-ground value, dilated past the kernel's reach — a NaN fill plateau otherwise shades as a cliff, and an arbitrary "neutral" constant prints as a grey block |
+
+`statewide.dem_for_unit` (science grids, 10 m) and `relief.shaded_relief`
+(display grids) both follow this. Statewide at 50 m: ~4.6 min, ~12 GB peak.
+
 ## Validated endpoints (probed 2026-08-12; see firescape/mtbs.py, fires.py)
 
 - WFIGS current perimeters (5-min refresh):
