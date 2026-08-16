@@ -68,31 +68,55 @@ def read_scene(sr: Path, udm: Path, ref: dict | None = None,
     return {k: np.ma.masked_array(v, bad) for k, v in out.items()}, ref
 
 
-def build(epoch_dir: Path, ref: dict | None = None, *, verbose: bool = True):
+#: Index name -> the band-dict function that computes it.
+_INDEX_FNS = {
+    "brightness": lambda b: ch.brightness(b["blue"], b["green"], b["red"],
+                                          b["nir"]),
+    "msavi2": lambda b: ch.msavi2(b["nir"], b["red"]),
+    "ndvi": lambda b: ch.ndvi(b["nir"], b["red"]),
+    "redness": lambda b: ch.redness(b["red"], b["green"]),
+}
+
+
+def build(epoch_dir: Path, ref: dict | None = None, *,
+          indices: tuple = ("brightness", "msavi2", "ndvi", "redness"),
+          rgb: bool = True, keep_nir: bool = True, dtype=np.float32,
+          verbose: bool = True):
     """One epoch -> composites.
 
     Returns ``(stats, rgb, nirs, ids, ref)`` where ``stats`` maps index name
     -> ``(median, mad, count)`` from :func:`firescape.change.epoch_stats`,
-    ``rgb`` is the median-reflectance display composite, and ``nirs`` keeps
-    the per-scene NIR planes for registration checks.
+    ``rgb`` is the median-reflectance display composite (``None`` when
+    ``rgb=False``), and ``nirs`` keeps the per-scene NIR planes for
+    registration checks (empty when ``keep_nir=False``).
+
+    Memory scales as scenes x pixels x (len(indices) + 3*rgb + keep_nir) x
+    itemsize. Big windows (the Dolan grid is ~36M px x 30 frames) should
+    pass ``indices=("brightness","msavi2","ndvi"), rgb=False,
+    keep_nir=False, dtype=np.float16`` -- reflectance indices live in
+    [-1, 1.5], where float16 resolution (~5e-4) is far below the cross-scene
+    noise the median is there to beat.
     """
-    idx_stacks = {k: [] for k in ("brightness", "msavi2", "ndvi", "redness")}
-    rgb_stacks = {k: [] for k in ("red", "green", "blue")}
+    idx_stacks = {k: [] for k in indices}
+    rgb_stacks = {k: [] for k in ("red", "green", "blue")} if rgb else None
     nirs, ids = [], []
     for sid, sr, udm in scene_pairs(epoch_dir):
         b, ref = read_scene(sr, udm, ref)
-        idx_stacks["brightness"].append(
-            ch.brightness(b["blue"], b["green"], b["red"], b["nir"]))
-        idx_stacks["msavi2"].append(ch.msavi2(b["nir"], b["red"]))
-        idx_stacks["ndvi"].append(ch.ndvi(b["nir"], b["red"]))
-        idx_stacks["redness"].append(ch.redness(b["red"], b["green"]))
-        for k in rgb_stacks:
-            rgb_stacks[k].append(b[k])
-        nirs.append(b["nir"])
+        for k in indices:
+            idx_stacks[k].append(_INDEX_FNS[k](b).astype(dtype))
+        if rgb:
+            for k in rgb_stacks:
+                rgb_stacks[k].append(b[k].astype(dtype))
+        if keep_nir:
+            nirs.append(b["nir"])
         ids.append(sid)
         if verbose:
             print(f"  {Path(epoch_dir).name}: {sid} loaded", flush=True)
     stats = {k: ch.epoch_stats(np.ma.stack(v)) for k, v in idx_stacks.items()}
-    rgb = np.dstack([np.ma.median(np.ma.stack(rgb_stacks[k]), axis=0).filled(0)
-                     for k in ("red", "green", "blue")])
-    return stats, rgb, nirs, ids, ref
+    rgb_img = None
+    if rgb:
+        rgb_img = np.dstack([
+            np.ma.median(np.ma.stack(rgb_stacks[k]), axis=0)
+            .astype(np.float32).filled(0)
+            for k in ("red", "green", "blue")])
+    return stats, rgb_img, nirs, ids, ref
