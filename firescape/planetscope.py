@@ -325,6 +325,31 @@ def download_order(order: dict | str, dest_dir: Path, *,
     dest_dir.mkdir(parents=True, exist_ok=True)
     auth = _auth(key)
 
+    def _stream(url, target, attempts=3):
+        """One file, retrying transient mid-stream failures (broken pipe,
+        reset, timeout). Returns 'expired' on 401/403 so the caller can
+        refresh the order's signed URLs."""
+        last = None
+        for i in range(attempts):
+            try:
+                r = requests.get(url, auth=auth, stream=True, timeout=600)
+                if r.status_code in (401, 403):
+                    return "expired"
+                _raise_for_planet(r)
+                part = target.with_suffix(target.suffix + ".part")
+                with open(part, "wb") as fh:
+                    for chunk in r.iter_content(1 << 20):
+                        fh.write(chunk)
+                part.rename(target)
+                return "ok"
+            except (requests.exceptions.ChunkedEncodingError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout) as e:
+                last = e
+                time.sleep(5 * (i + 1))
+        raise PlanetError(f"download of {target.name} failed after "
+                          f"{attempts} attempts: {last}")
+
     def _fetch(results):
         out = []
         for res in results:
@@ -332,16 +357,9 @@ def download_order(order: dict | str, dest_dir: Path, *,
                 else res["name"]
             target = dest_dir / rel
             target.parent.mkdir(parents=True, exist_ok=True)
-            r = requests.get(res["location"], auth=auth, stream=True,
-                             timeout=600)
-            if r.status_code in (401, 403):
-                return None                     # URLs expired -- refresh
-            _raise_for_planet(r)
-            part = target.with_suffix(target.suffix + ".part")
-            with open(part, "wb") as fh:
-                for chunk in r.iter_content(1 << 20):
-                    fh.write(chunk)
-            part.rename(target)
+            if not target.exists():             # resume: manifest verifies all
+                if _stream(res["location"], target) == "expired":
+                    return None                 # URLs expired -- refresh
             out.append(target)
         return out
 
