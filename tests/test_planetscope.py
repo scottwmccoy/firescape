@@ -110,13 +110,16 @@ def test_search_paginates_and_sorts(monkeypatch):
     monkeypatch.setenv("PL_API_KEY", "PLAKtest")
 
     got = ps.search((-119.72, 39.45, -119.63, 39.53),
-                    "2026-08-01", "2026-08-04", min_clear=90)
+                    "2026-08-01", "2026-08-04", min_clear=90,
+                    extra_filters=[{"type": "PermissionFilter",
+                                    "config": ["assets:download"]}])
     assert list(got["id"]) == ["a", "b", "c"]          # sorted by acquired
     assert got.crs.to_epsg() == 4326
     assert {"acquired", "clear_percent", "instrument"} <= set(got.columns)
     assert posted["payload"]["item_types"] == ["PSScene"]
     kinds = [c["type"] for c in posted["payload"]["filter"]["config"]]
     assert "GeometryFilter" in kinds and "RangeFilter" in kinds
+    assert "PermissionFilter" in kinds                 # extra_filters appended
 
 
 def test_search_empty_returns_empty_gdf(monkeypatch):

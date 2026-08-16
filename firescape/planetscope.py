@@ -172,21 +172,24 @@ _KEEP = ["acquired", "instrument", "satellite_id", "clear_percent",
 
 def search(aoi, start, end, *, item_type: str = "PSScene",
            max_cloud: float | None = None, min_clear: float | None = None,
-           key: str | None = None):
+           extra_filters: list[dict] | None = None, key: str | None = None):
     """Scenes intersecting an AOI in a date window, newest last.
 
     Returns a GeoDataFrame (EPSG:4326) of footprints with ``id`` plus the
     ``_KEEP`` properties. Searching is free -- be liberal here and strict at
-    order time.
+    order time. ``extra_filters`` are appended verbatim to the AndFilter
+    (e.g. a PermissionFilter for downloadability, StringInFilter on
+    quality_category).
     """
     import geopandas as gpd
     from shapely.geometry import shape
 
     geom = _aoi_geom(aoi)
-    payload = {"item_types": [item_type],
-               "filter": _search_filter(geom, start, end,
-                                        max_cloud=max_cloud,
-                                        min_clear=min_clear)}
+    flt = _search_filter(geom, start, end, max_cloud=max_cloud,
+                         min_clear=min_clear)
+    if extra_filters:
+        flt["config"].extend(extra_filters)
+    payload = {"item_types": [item_type], "filter": flt}
     auth = _auth(key)
     rows = []
     r = requests.post(QUICK_SEARCH, params={"_page_size": 250}, auth=auth,
