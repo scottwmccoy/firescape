@@ -160,6 +160,69 @@ def link_fans(fan_gdf, segments, cls: pd.Series, *, max_dist: float = 150.0):
     return out
 
 
+def local_offsets(labels, z, *, block: int = 750, max_off: int = 10,
+                  min_corridor_px: int = 2000):
+    """Per-block network-to-imagery offset, estimated WITHOUT truth labels.
+
+    DEM-delineated flowlines ride a different georeference than the
+    orthoimagery, by a spatially varying ~5-20 m (measured on Dolan, p19).
+    Per block, the corridor mask is cross-correlated (FFT) against |z| --
+    the offset that concentrates absolute change energy under the corridors
+    is taken as the local misalignment. Every segment in a block gets the
+    same shift, and class labels are never consulted, so the alignment
+    cannot cherry-pick per-segment evidence. Blocks with thin corridor
+    coverage inherit the median of estimated neighbours.
+
+    Returns ``(dy, dx)`` int arrays of shape (n_blocky, n_blockx): the roll
+    to apply to the LABEL raster to land corridors on the imagery.
+    """
+    from scipy.signal import fftconvolve
+
+    zabs = np.abs(np.ma.filled(np.ma.masked_invalid(np.ma.asarray(z)), 0.0))
+    mask = (np.asarray(labels) > 0).astype(np.float32)
+    H, W = mask.shape
+    nby, nbx = int(np.ceil(H / block)), int(np.ceil(W / block))
+    dy = np.full((nby, nbx), np.iinfo(np.int32).min, np.int32)
+    dx = np.zeros((nby, nbx), np.int32)
+    for by in range(nby):
+        for bx in range(nbx):
+            sl = (slice(by * block, min((by + 1) * block, H)),
+                  slice(bx * block, min((bx + 1) * block, W)))
+            m = mask[sl]
+            if m.sum() < min_corridor_px:
+                continue
+            za = zabs[sl]
+            za = np.where(za > 0, za - za[za > 0].mean(), 0.0)
+            c = fftconvolve(za, m[::-1, ::-1], mode="same")
+            cy, cx = np.array(c.shape) // 2
+            w = c[cy - max_off:cy + max_off + 1, cx - max_off:cx + max_off + 1]
+            p = np.unravel_index(np.argmax(w), w.shape)
+            dy[by, bx] = p[0] - max_off
+            dx[by, bx] = p[1] - max_off
+    have = dy != np.iinfo(np.int32).min
+    if not have.any():
+        return np.zeros_like(dy), np.zeros_like(dx)
+    med = (int(np.median(dy[have])), int(np.median(dx[have])))
+    dy[~have], dx[~have] = med
+    return dy, dx
+
+
+def apply_offsets(labels, dy, dx, *, block: int = 750):
+    """Shift the label raster block-wise by the ``local_offsets`` field."""
+    from scipy.ndimage import shift as ndshift
+
+    labels = np.asarray(labels)
+    out = np.zeros_like(labels)
+    H, W = labels.shape
+    for by in range(dy.shape[0]):
+        for bx in range(dy.shape[1]):
+            sl = (slice(by * block, min((by + 1) * block, H)),
+                  slice(bx * block, min((bx + 1) * block, W)))
+            out[sl] = ndshift(labels[sl], (dy[by, bx], dx[by, bx]),
+                              order=0, mode="constant", cval=0)
+    return out
+
+
 def classify(stats, *, mean_col: str = "z_brightness_mean",
              df_t: float = 2.5, fluvial_t: float = 1.0,
              min_pixels: int = 8) -> pd.Series:

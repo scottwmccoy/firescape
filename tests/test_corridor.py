@@ -115,3 +115,28 @@ def test_link_fans_feeder_evidence():
     got = co.link_fans(fans_gdf, seg, cls, max_dist=150)
     assert bool(got.loc[0, "fed"]) and got.loc[0, "feeder_class"] == 3
     assert not bool(got.loc[1, "fed"])
+
+
+def test_local_offsets_recovers_known_shift():
+    rng = np.random.default_rng(5)
+    H = W = 300
+    z = rng.normal(0, 0.3, (H, W)).astype(np.float32)
+    z[:, 148:152] += 4.0                       # bright channel at x~150
+    labels = np.zeros((H, W), np.int32)
+    labels[:, 141:145] = 1                     # corridor drawn 7 px west
+    dy, dx = co.local_offsets(labels, z, block=300, max_off=10,
+                              min_corridor_px=100)
+    assert dy.shape == (1, 1)
+    snapped = co.apply_offsets(labels, dy, dx, block=300)
+    # snapped corridor must overlap the channel far better than raw
+    raw = z[labels > 0].mean()
+    got = z[snapped > 0].mean()
+    assert got > raw + 2.0
+    assert abs(int(dx[0, 0]) - 7) <= 1 and abs(int(dy[0, 0])) <= 1
+
+
+def test_local_offsets_thin_blocks_inherit_median():
+    z = np.zeros((100, 100), np.float32)
+    labels = np.zeros((100, 100), np.int32)
+    dy, dx = co.local_offsets(labels, z, block=50, min_corridor_px=10)
+    assert (dy == 0).all() and (dx == 0).all()
