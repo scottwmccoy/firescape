@@ -26,74 +26,17 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-import rasterio
-from rasterio.warp import Resampling, reproject
 
-from firescape import change as ch, paths
+from firescape import change as ch, epochs, paths
 
 EVENT = "2026-06-19"
 POINTS = {"south fan": (-119.702819, 39.495294),
           "north fan": (-119.682656, 39.515572)}
-BANDS = {"blue": 2, "green": 4, "red": 6, "nir": 8}   # PSB.SD 8-band SR
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
 
 
-def scenes(epoch):
-    d = paths.raw_dir("planet", "hidden_valley", epoch)
-    srs = sorted(d.glob("*_SR_8b_harmonized_clip_file_format.tif"))
-    out = []
-    for sr in srs:
-        sid = sr.name.split("_3B_")[0]
-        udm = next(d.glob(f"{sid}*udm2*.tif"))
-        out.append((sid, sr, udm))
-    if not out:
-        sys.exit(f"no staged scenes under {d}")
-    return out
-
-
-def read_on_grid(sr, udm, ref=None):
-    """SR reflectance bands + clear mask, warped onto the reference grid."""
-    with rasterio.open(sr) as s:
-        if ref is None:
-            ref = {"transform": s.transform, "crs": s.crs,
-                   "width": s.width, "height": s.height}
-        shape = (ref["height"], ref["width"])
-        bands = {}
-        for name, idx in BANDS.items():
-            dst = np.zeros(shape, np.float32)
-            reproject(rasterio.band(s, idx), dst,
-                      dst_transform=ref["transform"], dst_crs=ref["crs"],
-                      resampling=Resampling.bilinear, dst_nodata=0.0)
-            bands[name] = dst / 1e4
-    with rasterio.open(udm) as u:
-        clear = np.zeros(shape, np.uint8)
-        reproject(rasterio.band(u, 1), clear,
-                  dst_transform=ref["transform"], dst_crs=ref["crs"],
-                  resampling=Resampling.nearest, dst_nodata=0)
-    bad = (clear != 1) | (bands["nir"] <= 0)
-    return {k: np.ma.masked_array(v, bad) for k, v in bands.items()}, ref
-
-
 def epoch_stacks(epoch, ref=None):
-    idx_stacks = {k: [] for k in ("brightness", "msavi2", "ndvi", "redness")}
-    rgb_stacks = {k: [] for k in ("red", "green", "blue")}
-    nirs, ids = [], []
-    for sid, sr, udm in scenes(epoch):
-        b, ref = read_on_grid(sr, udm, ref)
-        idx_stacks["brightness"].append(
-            ch.brightness(b["blue"], b["green"], b["red"], b["nir"]))
-        idx_stacks["msavi2"].append(ch.msavi2(b["nir"], b["red"]))
-        idx_stacks["ndvi"].append(ch.ndvi(b["nir"], b["red"]))
-        idx_stacks["redness"].append(ch.redness(b["red"], b["green"]))
-        for k in rgb_stacks:
-            rgb_stacks[k].append(b[k])
-        nirs.append(b["nir"])
-        ids.append(sid)
-        print(f"  {epoch}: {sid} loaded", flush=True)
-    stats = {k: ch.epoch_stats(np.ma.stack(v)) for k, v in idx_stacks.items()}
-    rgb = np.dstack([np.ma.median(np.ma.stack(rgb_stacks[k]), axis=0).filled(0)
-                     for k in ("red", "green", "blue")])
-    return stats, rgb, nirs, ids, ref
+    return epochs.build(paths.raw_dir("planet", "hidden_valley", epoch), ref)
 
 
 def px(ref, lon, lat):
