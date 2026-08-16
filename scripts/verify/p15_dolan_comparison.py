@@ -49,12 +49,16 @@ INV = ("/Users/scottmccoy/Library/CloudStorage/Box-Box/SWMresearch/"
 MIN_PIX = 12
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
 
-# ---- epochs (lite: the grid is ~36M px x 30 frames) ------------------------
+# ---- epochs (lite: the grid is ~40M px x 30 frames) ------------------------
+# The grid comes from the ordered AOI: Dolan deliveries are strip TILES, so
+# adopting the first scene's clip grid confines everything to its corner.
 print("=== epochs ===", flush=True)
-LITE = dict(indices=("brightness", "msavi2", "ndvi"), rgb=False,
+ref = epochs.grid(BOX4326, "EPSG:32610", 3.0)
+print(f"grid {ref['width']}x{ref['height']} EPSG:32610", flush=True)
+LITE = dict(indices=("brightness", "msavi2"), rgb=False,
             keep_nir=False, dtype=np.float16, verbose=True)
-pre, _, _, pre_ids, ref = epochs.build(
-    paths.raw_dir("planet", "dolan", "pre_20210127"), **LITE)
+pre, _, _, pre_ids, _ = epochs.build(
+    paths.raw_dir("planet", "dolan", "pre_20210127"), ref, **LITE)
 post, _, _, post_ids, _ = epochs.build(
     paths.raw_dir("planet", "dolan", "post_20210127"), ref, **LITE)
 z = {}
@@ -63,9 +67,6 @@ for k in ("brightness", "msavi2"):
                      post[k][0].astype(np.float32),
                      pre[k][1].astype(np.float32))
     z[f"z_{k}"] = zz - np.ma.median(zz)
-rd = ch.rdndvi(pre["ndvi"][0].astype(np.float32),
-               post["ndvi"][0].astype(np.float32))
-z["rdndvi"] = rd - np.ma.median(rd)
 print("z fields built", flush=True)
 
 # ---- their network + truth --------------------------------------------------
@@ -97,7 +98,7 @@ def auc(a, b):
 
 metrics = {}
 for col in ("z_brightness_mean", "z_brightness_p90", "z_msavi2_mean",
-            "rdndvi_mean"):
+            "z_msavi2_p90"):
     resp = auc(d.loc[truth3 > 0, col], d.loc[truth3 == 0, col])
     sever = auc(d.loc[truth3 == 3, col], d.loc[truth3 == 1, col])
     metrics[col] = {"auc_responded": round(resp, 3),

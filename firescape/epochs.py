@@ -27,6 +27,25 @@ from firescape import change as ch
 BANDS_8B = {"blue": 2, "green": 4, "red": 6, "nir": 8}
 
 
+def grid(bounds4326, crs, res: float = 3.0) -> dict:
+    """A reference grid covering an AOI, independent of any scene.
+
+    ALWAYS build the epoch grid from the ordered AOI, never by adopting the
+    first scene's clip: when deliveries are strip tiles (frames covering
+    fractions of the AOI -- the Dolan case), a scene-adopted grid silently
+    confines every later scene to the first frame's corner and most of the
+    window scores as no-data.
+    """
+    import numpy as np
+    from rasterio.transform import from_origin
+    from rasterio.warp import transform_bounds
+
+    b = transform_bounds("EPSG:4326", crs, *bounds4326)
+    return {"transform": from_origin(b[0], b[3], res, res), "crs": crs,
+            "width": int(np.ceil((b[2] - b[0]) / res)),
+            "height": int(np.ceil((b[3] - b[1]) / res))}
+
+
 def scene_pairs(epoch_dir: Path) -> list[tuple[str, Path, Path]]:
     """(scene_id, sr_path, udm2_path) for every staged scene, sorted."""
     epoch_dir = Path(epoch_dir)
