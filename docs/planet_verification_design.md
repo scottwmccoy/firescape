@@ -151,6 +151,20 @@ brightness carries severity, greenness misleads there. Sensor adapters
 (`sources.py`) make any such archive a first-class epoch source; one
 pipeline, per-sensor adapters only.
 
+
+### Network alignment (2026-08-16): Scott's shifted-centerline catch, closed
+
+The Dolan inventory flowlines sit **~50 m east** of the imagery frame:
+the label-free full-region FFT correlation peaks at (-6, -50) m (SNR
+5.8) and the independent AUC sweep trends to the same place. Corrected,
+the same-sensor WV pair reaches **responded AUC 0.801 / DF-vs-fluvial
+0.733** (from 0.738/0.625). Hidden Valley's pfdf network measures
+aligned to ~3 m -- no correction in the NV stack. Tooling: per-block
+snapping (`corridor.local_offsets`) where change evidence is strong; the
+global correlation / AUC sweep where it is marginal; the SNR probe (p21)
+diagnoses which regime applies. Every AUC reported before this section
+is a lower bound.
+
 **Domain statement**: stack–z–segment works where the response is
 *wider than a pixel and spectrally expressed at the surface* — semi-arid
 rangeland and open burn scars (Hidden Valley: both known fans recovered,
