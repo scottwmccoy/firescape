@@ -148,12 +148,13 @@ def run_pair(name, zfun, res, block):
     return {"raw": raw, "snapped": snapped, "offsets": off}
 
 
-res = {}
-res["planet_3m"] = run_pair("planet 3m", planet_z, 3.0, 500)
-res["wv2_2m"] = run_pair("WV2 2m", lambda r: maxar_z(
-    WV / "2020_11_29", [WV / "2021_04_19", WV / "2021_05_08"], r), 2.0, 750)
-res["ge1xwv2_2m"] = run_pair("GE1xWV2 2m", lambda r: maxar_z(
-    [WV / "2020_11_16", WV / "2020_10_22"],
-    [WV / "2021_04_19", WV / "2021_05_08"], r), 2.0, 750)
-(OUT / "dolan_snap_summary.json").write_text(json.dumps(res, indent=2))
-print(json.dumps(res, indent=2))
+if __name__ == "__main__":
+    res = {}
+    res["planet_3m"] = run_pair("planet 3m", planet_z, 3.0, 500)
+    res["wv2_2m"] = run_pair("WV2 2m", lambda r: maxar_z(
+        WV / "2020_11_29", [WV / "2021_04_19", WV / "2021_05_08"], r), 2.0, 750)
+    res["ge1xwv2_2m"] = run_pair("GE1xWV2 2m", lambda r: maxar_z(
+        [WV / "2020_11_16", WV / "2020_10_22"],
+        [WV / "2021_04_19", WV / "2021_05_08"], r), 2.0, 750)
+    (OUT / "dolan_snap_summary.json").write_text(json.dumps(res, indent=2))
+    print(json.dumps(res, indent=2))

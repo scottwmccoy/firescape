@@ -162,7 +162,7 @@ def link_fans(fan_gdf, segments, cls: pd.Series, *, max_dist: float = 150.0):
 
 def local_offsets(labels, z, *, block: int = 750, max_off: int = 8,
                   min_corridor_px: int = 2000, min_snr: float = 8.0,
-                  smooth: bool = True):
+                  smooth: bool = True, with_info: bool = False):
     """Per-block network-to-imagery offset, estimated WITHOUT truth labels.
 
     DEM-delineated flowlines ride a different georeference than the
@@ -185,6 +185,9 @@ def local_offsets(labels, z, *, block: int = 750, max_off: int = 8,
     nby, nbx = int(np.ceil(H / block)), int(np.ceil(W / block))
     dy = np.full((nby, nbx), np.iinfo(np.int32).min, np.int32)
     dx = np.zeros((nby, nbx), np.int32)
+    snr_grid = np.full((nby, nbx), np.nan, np.float32)
+    raw_dy = np.zeros((nby, nbx), np.int32)
+    raw_dx = np.zeros((nby, nbx), np.int32)
     for by in range(nby):
         for bx in range(nbx):
             sl = (slice(by * block, min((by + 1) * block, H)),
@@ -207,22 +210,29 @@ def local_offsets(labels, z, *, block: int = 750, max_off: int = 8,
             core = w[max(p[0] - 1, 0):p[0] + 2,
                      max(p[1] - 1, 0):p[1] + 2].mean()
             mad = np.median(np.abs(w - np.median(w))) + 1e-12
+            snr = (core - np.median(w)) / (1.4826 * mad)
+            snr_grid[by, bx] = snr
+            raw_dy[by, bx] = p[0] - max_off
+            raw_dx[by, bx] = p[1] - max_off
             on_edge = (p[0] in (0, w.shape[0] - 1)
                        or p[1] in (0, w.shape[1] - 1))
-            if on_edge or (core - np.median(w)) / (1.4826 * mad) < min_snr:
+            if on_edge or snr < min_snr:
                 continue
             dy[by, bx] = p[0] - max_off
             dx[by, bx] = p[1] - max_off
     have = dy != np.iinfo(np.int32).min
+    info = {"snr": snr_grid, "accepted": have.copy(),
+            "raw_dy": raw_dy, "raw_dx": raw_dx}
     if not have.any():
-        return np.zeros_like(dy), np.zeros_like(dx)
+        out = (np.zeros_like(dy), np.zeros_like(dx))
+        return (*out, info) if with_info else out
     med = (int(np.median(dy[have])), int(np.median(dx[have])))
     dy[~have], dx[~have] = med
     if smooth and min(dy.shape) >= 2:
         from scipy.ndimage import median_filter
         dy = median_filter(dy, size=3, mode="nearest")
         dx = median_filter(dx, size=3, mode="nearest")
-    return dy, dx
+    return (dy, dx, info) if with_info else (dy, dx)
 
 
 def apply_offsets(labels, dy, dx, *, block: int = 750):
