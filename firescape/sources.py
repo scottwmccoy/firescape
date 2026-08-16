@@ -74,11 +74,20 @@ class MaxarStrips:
     the z scale must come from a spatial robust estimate downstream.
     """
 
-    def __init__(self, date_dir: Path, *, product: str = "M2AS"):
-        self.dir = Path(date_dir)
-        self.tifs = sorted(self.dir.glob(f"*/*-{product}-*/*.TIF"))
+    def __init__(self, date_dirs, *, product: str = "M2AS"):
+        if isinstance(date_dirs, (str, Path)):
+            date_dirs = [date_dirs]
+        self.dirs = [Path(d) for d in date_dirs]
+        # order preserved: earlier dirs win the first-valid-wins mosaic, so
+        # list the epoch's anchor date first and gap-fillers after
+        self.tifs = [t for d in self.dirs
+                     for t in sorted(d.glob(f"*/*-{product}-*/*.TIF"))]
         if not self.tifs:
-            raise FileNotFoundError(f"no {product} strips under {date_dir}")
+            raise FileNotFoundError(f"no {product} strips under {date_dirs}")
+        sats = {parse_imd(t.with_suffix(".IMD"))["sat"] for t in self.tifs}
+        if len(sats) > 1:
+            raise ValueError(f"one epoch, one sensor: got {sorted(sats)} -- "
+                             "radiance is not comparable across sensors")
 
     def meta(self) -> list[dict]:
         return [parse_imd(t.with_suffix(".IMD")) for t in self.tifs]

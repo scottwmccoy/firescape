@@ -43,7 +43,7 @@ ref = epochs.grid(BOX4326, "EPSG:32610", 2.0)
 print(f"grid {ref['width']}x{ref['height']} @2 m", flush=True)
 
 pre_src = sources.MaxarStrips(WV / "2020_11_29")
-post_src = sources.MaxarStrips(WV / "2021_04_19")
+post_src = sources.MaxarStrips([WV / "2021_04_19", WV / "2021_05_08"])
 print(f"pre: {len(pre_src.tifs)} strips, sun {pre_src.sun()}", flush=True)
 print(f"post: {len(post_src.tifs)} strips, sun {post_src.sun()}", flush=True)
 pre = pre_src.read_into(ref)
@@ -53,7 +53,10 @@ print("post mosaicked", flush=True)
 
 # ---- global registration check/fix -----------------------------------------
 h, w = ref["height"], ref["width"]
-sl = (slice(h // 2 - 1024, h // 2 + 1024), slice(w // 2 - 1024, w // 2 + 1024))
+both0 = ~(np.ma.getmaskarray(pre["nir"]) | np.ma.getmaskarray(post["nir"]))
+ys, xs = np.nonzero(both0[::8, ::8])
+cy, cx = int(np.median(ys)) * 8, int(np.median(xs)) * 8   # joint-coverage centre
+sl = (slice(max(cy - 1024, 0), cy + 1024), slice(max(cx - 1024, 0), cx + 1024))
 dy, dx = ch.scene_offset(pre["nir"][sl], post["nir"][sl])
 print(f"registration pre->post: dy={dy:.2f}, dx={dx:.2f} px", flush=True)
 if max(abs(dy), abs(dx)) > 0.6:
@@ -169,6 +172,9 @@ x, y = t.transform(-121.415, 36.115)
 tr = ref["transform"]
 c, r = int((x - tr.c) / tr.a), int((y - tr.f) / tr.e)
 H = 900
+if not both[max(r - H, 0):r + H, max(c - H, 0):c + H].any():
+    r, c = cy, cx                      # chip target outside joint coverage
+    print("chip recentred to joint-coverage centroid", flush=True)
 win = (slice(max(r - H, 0), r + H), slice(max(c - H, 0), c + H))
 ext = (tr.c + tr.a * win[1].start, tr.c + tr.a * win[1].stop,
        tr.f + tr.e * win[0].stop, tr.f + tr.e * win[0].start)
@@ -183,8 +189,8 @@ for ax, (arr, cmap, vlim, title) in zip(axes, [
         ax.imshow(arr, cmap=cmap, vmin=vlim[0], vmax=vlim[1], extent=ext)
     else:
         v = np.ma.compressed(arr)
-        ax.imshow(arr, cmap=cmap, vmin=np.percentile(v, 2),
-                  vmax=np.percentile(v, 98), extent=ext)
+        lo, hi = (np.percentile(v, [2, 98]) if v.size else (0, 1))
+        ax.imshow(arr, cmap=cmap, vmin=lo, vmax=hi, extent=ext)
     truth_fl.plot(ax=ax, color="#F5D000", linewidth=0.5, alpha=0.8)
     truth_df.plot(ax=ax, color="#C1272D", linewidth=1.0, alpha=0.9)
     ax.set_xlim(ext[0], ext[1]); ax.set_ylim(ext[2], ext[3])

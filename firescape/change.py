@@ -119,7 +119,9 @@ def scene_offset(ref, img, *, upsample: int = 10):
 
     def _fill(a):
         a = np.ma.masked_invalid(np.ma.asarray(a))
-        return a.filled(float(a.mean()))
+        m = a.mean()
+        fill = float(m) if np.isfinite(m) else 0.0
+        return np.nan_to_num(a.filled(fill), nan=fill)
 
     # skimage returns the correction to apply to img; displacement is its
     # negation, which is what a mis-registration report should quote.
