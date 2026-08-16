@@ -134,6 +134,27 @@ looks, and the repo CLAUDE.md for the DEM-resampling traps. `plotting.save`
 writes **PDF only** — pass `formats=("png", "pdf")` if something downstream
 needs a raster.
 
+## verify/ — Planet-imagery event verification (design: docs/planet_verification_design.md)
+
+The stack–z–segment chain: epoch medians of PlanetScope SR → robust z →
+corridor-integrated per-segment response classes (Dolan-inventory coding:
+0 none / 1 fluvial / 3 debris flow), plus fan-deposit objects beyond the
+network. Library half lives in `firescape/{planetscope,epochs,change,
+corridor,fans}.py`; these drivers are the as-run event analyses.
+
+| script | what it does |
+|---|---|
+| `p13_hidden_valley_event.py` | Hidden Valley 2026-06-19: epoch z maps + chips at the two reported fan sites (first real detection) |
+| `p14_hv_corridor.py` | per-segment response map over the pfdf network (1,412 segments: 927/324/161 at provisional thresholds) |
+| `p15_dolan_comparison.py` | score corridor z against the Cavagnaro/McCoy Dolan inventory (AUC separability, prevalence-matched thresholds, confusion, side-by-side maps) |
+| `p16_hv_fans.py` | fan-stage v0: HAND-lite fan zone + compact change objects (both reported HV fans recovered at 0.3 m / 8.3 m) |
+
+Costs worth knowing: Planet orders take ~15–60 min to process (poll the
+ORDER, never a log); the ~30-day CSDA embargo delays post-storm imagery a
+month; epoch builds on big windows need the lite options
+(`epochs.build(..., indices=..., rgb=False, keep_nir=False,
+dtype=np.float16)`) — the Dolan grid is ~36M px × 30 frames.
+
 ## products/
 
 | script | what it does |

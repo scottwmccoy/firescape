@@ -123,17 +123,33 @@ hand-map (regime a, tuning); Montecito 2018 field polygons (Kean et al.
 2019, external fan-inundation benchmark, PS0-era transforms required);
 first NV burn+storm pair for regime (b).
 
-## Build order
+## Build order (status 2026-08-15)
 
-1. ~~Acquisition~~ (done: search/screen/order/download/verify/stage).
-2. Stack engine: epoch composites — udm2+MAD masking, AROSICS, per-scene
-   normalization, cast shadows, per-pixel counts.
-3. Change engine: Δ-index rasters, robust z, significance, persistence.
-4. Corridor conditioning: HAND/corridor rasters from unit DEMs, pfdf-segment
-   integration, connectivity, per-segment table + fan polygons.
-5. Triage viewer (fallback UI = manual-ID tool).
-6. Validation: Hidden Valley event pair; then a burned pair; A/B the
-   automated detector against the triage fallback.
+1. ~~Acquisition~~ — done, live-proven (search/screen/order/verified
+   download/Box staging; retry+resume on stream failures).
+2. ~~Stack engine v0~~ — `epochs.py`: udm2 masking, common-grid warp, epoch
+   median/MAD/count, memory-lite options. Measured registration on
+   harmonized PSB.SD clips: ≤0.1 px, so AROSICS stays off the critical
+   path. Still open: per-scene normalization, cast-shadow mask,
+   MAD outlier rejection, persistence vote.
+3. ~~Change engine v0~~ — `change.py`: indices, floored rdNDVI, robust z
+   (floored MAD divisor), phase-correlation registration check.
+4. ~~Corridor stage v0~~ — `corridor.py`: width-scaled corridors,
+   corridor-integrated stats, Dolan-coded 3-class `classify`. Hidden
+   Valley 2026-06-19: 1,412 segments → 927/324/161 (provisional
+   thresholds); both reported fan drainages classified DF. Open:
+   down-gradient continuity vote (topology inferable from shared
+   endpoints + Area_km2 ordering — no to/from ids in the GPKGs).
+5. ~~Fan stage v0~~ — `fans.py`: HAND-lite (euclidean-nearest channel)
+   fan zone, compact change objects. HV acceptance: both reported fans
+   recovered (0.3 m / 8.3 m). Open: true flow-routed HAND,
+   feeder-segment connectivity, urban/road masking.
+6. Dolan calibration — driver ready (`p15`), runs when the Jan 2021
+   epochs land: AUC separability, prevalence-matched thresholds,
+   3-class confusion vs the Cavagnaro/McCoy inventory.
+7. Triage viewer (fallback UI = manual-ID tool) — not started.
+8. Remaining validation: burned-pair regime (b) event; A/B automated vs
+   triage.
 
 Known constraints: ~30-day CSDA download embargo (verification runs ~a month
 behind the storm; search/thumbnails immediate); scene selection by

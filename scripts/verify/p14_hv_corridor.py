@@ -78,7 +78,11 @@ labels = co.corridor_raster(seg, ref)
 stats = co.segment_stats(labels, z)
 stats = stats.reindex(range(len(seg)))
 seg = seg.join(stats)
-seg["response"] = co.classify(stats)
+raw_cls = co.classify(stats)
+seg["response_raw"] = raw_cls
+seg["response"] = co.continuity_demote(seg, raw_cls)
+demoted = int((seg["response"] != seg["response_raw"]).sum())
+print(f"continuity vote demoted {demoted} isolated segments", flush=True)
 counts = seg["response"].value_counts().to_dict()
 print("classes:", {co.CLASSES[k]: int(v) for k, v in sorted(counts.items())},
       flush=True)

@@ -74,3 +74,44 @@ def test_segment_stats_and_classify(grid, segments):
 def test_classify_min_pixels_guard():
     stats = pd.DataFrame({"z_brightness_mean": [5.0], "n_pixels": [3]})
     assert co.classify(stats).iloc[0] == 0   # too few pixels to call
+
+
+def _chain_and_lonely():
+    # 0-1-2 form a connected chain; 3 is isolated far away
+    return gpd.GeoDataFrame(geometry=[
+        LineString([(0, 0), (100, 0)]),
+        LineString([(100, 0), (200, 0)]),
+        LineString([(200, 0), (300, 0)]),
+        LineString([(1000, 1000), (1100, 1000)]),
+    ], crs="EPSG:32611")
+
+
+def test_neighbors_by_node():
+    adj = co.neighbors_by_node(_chain_and_lonely())
+    assert adj[1] == {0, 2}
+    assert adj[0] == {1}
+    assert adj.get(3, set()) == set()
+
+
+def test_continuity_demote_kills_isolated_keeps_chains():
+    seg = _chain_and_lonely()
+    cls = pd.Series([3, 1, 3, 3], index=range(4))
+    out = co.continuity_demote(seg, cls)
+    assert list(out[:3]) == [3, 1, 3]        # chain untouched
+    assert out[3] == 1                       # isolated DF demoted one level
+    out2 = co.continuity_demote(seg, pd.Series([0, 0, 1, 1]))
+    assert out2[2] == 0                      # fluvial with cold neighbors -> 0
+    assert out2[3] == 0                      # isolated fluvial -> 0
+
+
+def test_link_fans_feeder_evidence():
+    from shapely.geometry import Point
+    seg = _chain_and_lonely()
+    cls = pd.Series([3, 0, 0, 0], index=range(4))
+    fans_gdf = gpd.GeoDataFrame(geometry=[
+        Point(50, 40).buffer(30),            # 10 m from hot segment 0
+        Point(600, 600).buffer(30),          # far from everything hot
+    ], crs="EPSG:32611")
+    got = co.link_fans(fans_gdf, seg, cls, max_dist=150)
+    assert bool(got.loc[0, "fed"]) and got.loc[0, "feeder_class"] == 3
+    assert not bool(got.loc[1, "fed"])

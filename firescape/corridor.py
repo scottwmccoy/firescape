@@ -85,6 +85,81 @@ def segment_stats(labels, fields: dict, *, frac_threshold: float = 2.0):
     return out
 
 
+def neighbors_by_node(segments, *, tol: float = 3.0) -> dict[int, set]:
+    """Adjacency from shared endpoints (no to/from ids in the GPKGs).
+
+    Endpoint coordinates are snapped to ``tol`` metres; segments sharing a
+    snapped node are neighbors. MultiLineStrings are line-merged first.
+    """
+    from collections import defaultdict
+
+    from shapely import ops
+
+    nodes = defaultdict(set)
+    for i, geom in enumerate(segments.geometry):
+        if geom is None or geom.is_empty:
+            continue
+        g = ops.linemerge(geom) if geom.geom_type == "MultiLineString" else geom
+        parts = list(g.geoms) if g.geom_type == "MultiLineString" else [g]
+        ends = [parts[0].coords[0], parts[-1].coords[-1]]
+        for x, y in ends:
+            nodes[(round(x / tol), round(y / tol))].add(i)
+    adj: dict[int, set] = defaultdict(set)
+    for members in nodes.values():
+        for i in members:
+            adj[i] |= members - {i}
+    return dict(adj)
+
+
+def continuity_demote(segments, cls: pd.Series, *, tol: float = 3.0,
+                      adj: dict | None = None) -> pd.Series:
+    """Demote isolated hot segments by one class.
+
+    A real flow occupies a connected chain of reaches; grading, road dust
+    and field edges produce isolated hot segments. Any segment classified
+    >= fluvial with NO network neighbor >= fluvial drops one level
+    (3 -> 1, 1 -> 0). Chains are untouched -- every member has a hot
+    neighbor. One pass, simultaneous (decisions use the input classes).
+    """
+    if adj is None:
+        adj = neighbors_by_node(segments, tol=tol)
+    out = cls.copy()
+    hot = set(cls.index[cls >= 1])
+    for i in cls.index[cls >= 1]:
+        if not (set(adj.get(i, ())) & hot):
+            out.loc[i] = 1 if cls.loc[i] == 3 else 0
+    return out
+
+
+def link_fans(fan_gdf, segments, cls: pd.Series, *, max_dist: float = 150.0):
+    """Attach feeder evidence to fan objects.
+
+    Adds ``feeder_class`` (the strongest response class among segments
+    within ``max_dist`` of the polygon) and ``fed`` (feeder_class >= 1).
+    Deposits with no responding feeder are the road/irrigation imposters.
+    """
+    if not len(fan_gdf):
+        fan_gdf = fan_gdf.copy()
+        fan_gdf["feeder_class"] = []
+        fan_gdf["fed"] = []
+        return fan_gdf
+    out = fan_gdf.copy()
+    hot = segments[cls.reindex(segments.index).fillna(0) >= 1]
+    out["feeder_class"] = 0
+    if len(hot):
+        import geopandas as gpd
+
+        joined = gpd.sjoin_nearest(out[["geometry"]], hot[["geometry"]],
+                                   max_distance=max_dist, how="left",
+                                   distance_col="_d")
+        near = joined.dropna(subset=["index_right"])
+        best = near.groupby(level=0)["index_right"].apply(
+            lambda s: int(cls.loc[s.astype(int)].max()))
+        out.loc[best.index, "feeder_class"] = best
+    out["fed"] = out["feeder_class"] >= 1
+    return out
+
+
 def classify(stats, *, mean_col: str = "z_brightness_mean",
              df_t: float = 2.5, fluvial_t: float = 1.0,
              min_pixels: int = 8) -> pd.Series:

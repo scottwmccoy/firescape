@@ -67,6 +67,16 @@ print(f"fan zone: {zone.mean():.1%} of window", flush=True)
 det = fans.detect_fans(z, zone, ref, z_t=2.5, min_area_px=30)
 print(f"{len(det)} candidate deposits", flush=True)
 
+# feeder evidence: corridor classes from the same z field
+labels = co.corridor_raster(seg, ref)
+cls = co.continuity_demote(
+    seg, co.classify(co.segment_stats(labels, {"z_brightness": z})
+                     .reindex(range(len(seg)))))
+det = co.link_fans(det, seg, cls, max_dist=150.0)
+n_fed = int(det["fed"].sum())
+print(f"{n_fed} of {len(det)} deposits have a responding feeder segment",
+      flush=True)
+
 # acceptance: known fans recovered?
 import pyproj
 t = pyproj.Transformer.from_crs("EPSG:4326", ref["crs"], always_xy=True)
@@ -93,8 +103,14 @@ ax.imshow(zm.filled(np.nan), cmap="Blues", vmin=0, vmax=3, alpha=0.25,
           extent=extent, zorder=1)
 seg.plot(ax=ax, color="white", linewidth=0.4, alpha=0.6, zorder=2)
 if len(det):
-    det.plot(ax=ax, facecolor="#C1272D", edgecolor="#7A0D12",
-             linewidth=0.6, alpha=0.75, zorder=5)
+    unfed = det[~det["fed"]]
+    if len(unfed):
+        unfed.plot(ax=ax, facecolor="0.45", edgecolor="0.25",
+                   linewidth=0.4, alpha=0.55, zorder=4)
+    fed = det[det["fed"]]
+    if len(fed):
+        fed.plot(ax=ax, facecolor="#C1272D", edgecolor="#7A0D12",
+                 linewidth=0.6, alpha=0.8, zorder=5)
 for name, (lon, lat) in POINTS.items():
     x, y = t.transform(lon, lat)
     ax.plot(x, y, "o", ms=13, mfc="none", mec="#00A0B0", mew=2.5, zorder=9)
@@ -103,15 +119,18 @@ for name, (lon, lat) in POINTS.items():
                 color="#00A0B0", fontsize=11, fontweight="bold", zorder=9)
 ax.set_xlim(extent[0], extent[1]); ax.set_ylim(extent[2], extent[3])
 ax.set_axis_off()
-ax.set_title(f"Hidden Valley {EVENT} — fan-stage v0: detected deposits (red) "
-             "in the fan zone (blue tint)\nHAND-lite < 5 m ∧ slope 1.5–15° ∧ "
-             "≤ 500 m of a channel; z ≥ 2.5, ≥ 270 m²", fontsize=11)
+ax.set_title(f"Hidden Valley {EVENT} — fan stage: deposits with a responding "
+             "feeder segment (red) vs without (grey)\nfan zone tinted blue; "
+             "HAND-lite < 5 m ∧ slope 1.5–15° ∧ ≤ 500 m of a channel; "
+             "z ≥ 2.5, ≥ 270 m²", fontsize=11)
 fig.tight_layout()
 fig.savefig(OUT / "hv_fans_map.png", bbox_inches="tight")
 plt.close(fig)
 
 summary = {
     "event": EVENT, "n_deposits": int(len(det)),
+    "n_fed": int(det["fed"].sum()) if len(det) else 0,
+    "fed_area_m2": float(det.loc[det["fed"], "area_m2"].sum()) if len(det) else 0.0,
     "total_deposit_area_m2": float(det["area_m2"].sum()) if len(det) else 0.0,
     "largest_m2": float(det["area_m2"].max()) if len(det) else 0.0,
     "distance_to_known_fans_m": hits,
