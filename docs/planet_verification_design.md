@@ -123,6 +123,30 @@ hand-map (regime a, tuning); Montecito 2018 field polygons (Kean et al.
 2019, external fan-inundation benchmark, PS0-era transforms required);
 first NV burn+storm pair for regime (b).
 
+### Dolan result (2026-08-16): a domain boundary, measured
+
+Scored against the Cavagnaro/McCoy inventory (24,619 segments; inland
+window, 10,085 scorable), the corridor-z detector is at chance:
+responded AUC 0.52 raw → 0.57 after DEM-based illumination correction
+(sun rose 28°→33° between epochs; the Δcos(i) regression removed an
+aspect-organized ±6σ artifact but explained only 10.5% of z variance);
+DF-vs-fluvial AUC ≈ 0.52 in every stratum. Stratifying by corridor
+illumination changes little (well-lit 0.59 / shadowy 0.56) — the
+discriminative signal is absent, not masked. Median min-epoch cos(i)
+over corridors is 0.38: these channels spend winter in half-shadow, and
+the inventory's channel-bed changes were mapped from ≤0.5 m Worldview +
+field precisely because 3 m cannot see them there.
+
+**Domain statement**: stack–z–segment works where the response is
+*wider than a pixel and spectrally expressed at the surface* — semi-arid
+rangeland and open burn scars (Hidden Valley: both known fans recovered,
+coherent 3-class inventory). It does not work for winter, steep,
+conifer-flanked channel response at 3 m (inland Dolan) — there the
+options are sub-meter tasking (SkySat/Worldview), SAR change (Handwerger
+2022), or accepting reach-scale human review of the imagery (the triage
+viewer). Diagnostics that must precede any future event run: epoch sun
+Δelevation, corridor min-epoch cos(i), and canopy fraction.
+
 ## Build order (status 2026-08-15)
 
 1. ~~Acquisition~~ — done, live-proven (search/screen/order/verified
