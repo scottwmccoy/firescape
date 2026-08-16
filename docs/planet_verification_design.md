@@ -137,6 +137,20 @@ over corridors is 0.38: these channels spend winter in half-shadow, and
 the inventory's channel-bed changes were mapped from ≤0.5 m Worldview +
 field precisely because 3 m cannot see them there.
 
+
+### WorldView re-score (2026-08-16): resolution matters, coverage rules
+
+Same corridor protocol on WV-2 M2AS radiance (pre 2020-11-29 x5 strips,
+post 2021-04-19 + 05-08 x7, both 8-band 2 m, same sensor): **responded
+AUC 0.738, DF-vs-fluvial 0.625** — the first non-chance severity
+separation on Dolan, vs 0.574/0.531 at 3 m. Caveats: the Nov/spring
+strip geometries jointly cover only 5.1% of the inland window (504
+segments), a ~10 m M2AS ortho offset had to be measured and corrected,
+and z(ΔNDVI) *inverts* for DF-vs-fluvial (0.40) after spring green-up —
+brightness carries severity, greenness misleads there. Sensor adapters
+(`sources.py`) make any such archive a first-class epoch source; one
+pipeline, per-sensor adapters only.
+
 **Domain statement**: stack–z–segment works where the response is
 *wider than a pixel and spectrally expressed at the surface* — semi-arid
 rangeland and open burn scars (Hidden Valley: both known fans recovered,
