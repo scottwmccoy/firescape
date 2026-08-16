@@ -84,7 +84,9 @@ the statewide figure 2026-08-14.
   Traps, all live-verified: **~30-day download embargo** (search/thumbnails
   immediate, `assets:download` appears ~day 30 — post-storm verification waits
   a month); `clear_percent` is SCENE-wide — rank scenes by
-  `aoi_coverage()` (a 100%-clear scene covered 8% of the Hidden Valley AOI);
+  `aoi_coverage()` (a 100%-clear scene covered only part of the Hidden Valley
+  AOI; `mode="estimate"` is coarse triage — it said 8% where the delivered
+  clip held 36.7% — use `mode="udm2"` for final selection);
   a `clear_percent` filter silently drops pre-Aug-2018 (pre-udm2) scenes —
   use `cloud_cover` for old baselines; udm2 shadow band is unreliable
   (published F1≈0.6) — do terrain shadows ourselves from the DEM. Orders
