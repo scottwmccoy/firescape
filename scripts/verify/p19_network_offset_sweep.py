@@ -128,9 +128,9 @@ def score(off_y, off_x):
 print("offset sweep (imagery px @2 m; +y = network effectively moves north):",
       flush=True)
 best = (None, -1)
-for oy in range(-8, 9, 2):
+for oy in range(-12, 13, 4):
     row = []
-    for ox in range(-8, 9, 2):
+    for ox in range(-24, 3, 2):
         r, s, n = score(oy, ox)
         row.append(f"{r:.3f}")
         if r > best[1]:
