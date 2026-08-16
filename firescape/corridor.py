@@ -160,8 +160,9 @@ def link_fans(fan_gdf, segments, cls: pd.Series, *, max_dist: float = 150.0):
     return out
 
 
-def local_offsets(labels, z, *, block: int = 750, max_off: int = 10,
-                  min_corridor_px: int = 2000):
+def local_offsets(labels, z, *, block: int = 750, max_off: int = 8,
+                  min_corridor_px: int = 2000, min_snr: float = 8.0,
+                  smooth: bool = True):
     """Per-block network-to-imagery offset, estimated WITHOUT truth labels.
 
     DEM-delineated flowlines ride a different georeference than the
@@ -197,6 +198,19 @@ def local_offsets(labels, z, *, block: int = 750, max_off: int = 10,
             cy, cx = np.array(c.shape) // 2
             w = c[cy - max_off:cy + max_off + 1, cx - max_off:cx + max_off + 1]
             p = np.unravel_index(np.argmax(w), w.shape)
+            # prominence gate: mean of the 3x3 peak core vs the window
+            # median, in MAD units. A real alignment peak (even the ridge a
+            # linear channel produces) scores >>10; a noise argmax is a
+            # single-cell spike whose core mean collapses (~3). Boundary
+            # peaks are rejected outright -- the measured Dolan pathology
+            # was noise blocks pinning at the search bounds.
+            core = w[max(p[0] - 1, 0):p[0] + 2,
+                     max(p[1] - 1, 0):p[1] + 2].mean()
+            mad = np.median(np.abs(w - np.median(w))) + 1e-12
+            on_edge = (p[0] in (0, w.shape[0] - 1)
+                       or p[1] in (0, w.shape[1] - 1))
+            if on_edge or (core - np.median(w)) / (1.4826 * mad) < min_snr:
+                continue
             dy[by, bx] = p[0] - max_off
             dx[by, bx] = p[1] - max_off
     have = dy != np.iinfo(np.int32).min
@@ -204,6 +218,10 @@ def local_offsets(labels, z, *, block: int = 750, max_off: int = 10,
         return np.zeros_like(dy), np.zeros_like(dx)
     med = (int(np.median(dy[have])), int(np.median(dx[have])))
     dy[~have], dx[~have] = med
+    if smooth and min(dy.shape) >= 2:
+        from scipy.ndimage import median_filter
+        dy = median_filter(dy, size=3, mode="nearest")
+        dx = median_filter(dx, size=3, mode="nearest")
     return dy, dx
 
 

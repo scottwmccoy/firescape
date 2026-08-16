@@ -75,6 +75,12 @@ seg = seg[seg.intersects(box(*transform_bounds("EPSG:4326", ref["crs"],
 print(f"{len(seg):,} pfdf segments in the window", flush=True)
 
 labels = co.corridor_raster(seg, ref)
+dyf, dxf = co.local_offsets(labels, z["z_brightness"], block=500)
+import numpy as _np
+print(f"network snap field (px): dy median {_np.median(dyf):+.0f} "
+      f"[{dyf.min()},{dyf.max()}], dx median {_np.median(dxf):+.0f} "
+      f"[{dxf.min()},{dxf.max()}]", flush=True)
+labels = co.apply_offsets(labels, dyf, dxf, block=500)
 stats = co.segment_stats(labels, z)
 stats = stats.reindex(range(len(seg)))
 seg = seg.join(stats)
