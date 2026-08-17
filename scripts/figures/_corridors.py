@@ -172,7 +172,15 @@ def places_for(bounds):
     """
     from stormscape import refdata
 
-    g = refdata.places(bounds).to_crs("EPSG:4326").copy()
+    g = refdata.places(bounds)
+    if not len(g) or "name" not in g.columns:
+        # GNIS answers with non-JSON often enough to matter: it went down
+        # mid-batch once and took the rest of a sheet run with it. A window
+        # with no place names is a worse figure, not a failed one.
+        print("  no place names available for this window", flush=True)
+        return gpd.GeoDataFrame({"name": [], "kind": []},
+                                geometry=gpd.GeoSeries([], crs=4326), crs=4326)
+    g = g.to_crs("EPSG:4326").copy()
     g["geometry"] = g.geometry.representative_point()
     nm = g["name"].astype(str)
     for p in _PREFIX:
