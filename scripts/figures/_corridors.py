@@ -21,6 +21,8 @@ import math
 
 import geopandas as gpd
 
+from stormscape.plot import Labeller, shorten
+
 from firescape import paths, plotting as mc
 
 #: One entry per corridor. ``bounds`` is (west, south, east, north) in degrees;
@@ -389,26 +391,34 @@ def decorate(ax, C, extent, *, step):
         ax.legend(handles=handles, loc="lower left", fontsize=7,
                   framealpha=0.9, borderpad=0.5).set_zorder(9.5)
 
-    for _, r in C["river_labels"].iterrows():
-        ax.annotate(str(r["name"]), (r.geometry.x, r.geometry.y), fontsize=6.5,
-                    style="italic", color="#1b4f72", ha="center", zorder=9.1,
-                    path_effects=halo)
-    for _, r in C["lake_labels"].iterrows():
-        c = r.geometry.representative_point()
-        ax.annotate(str(r["name"]), (c.x, c.y), fontsize=7, style="italic",
-                    color="#1b4f72", ha="center", zorder=9.1, path_effects=halo)
+    # Labels last, and through one Labeller for the whole panel: the corridor
+    # windows put a town on the river it sits on, so water names and place
+    # names compete for the same few pixels (Dayton and the Carson River were
+    # printing on top of each other). Limits first -- placement is computed in
+    # display coordinates.
+    mc.style_axes(ax, extent, step=step)
+    ax.figure.canvas.draw()
+    lab = Labeller(ax)
 
     pl = C["places"]
     if len(pl):
         ax.scatter(pl.geometry.x, pl.geometry.y, s=10, color="black",
                    edgecolor="white", linewidth=0.5, zorder=9)
-        for _, r in pl.iterrows():
-            # a WHITE halo: the calibration-perimeter style is a black stroke,
-            # which around black text just reads as bold
-            ax.annotate(str(r["name"]), (r.geometry.x, r.geometry.y),
-                        xytext=(3, 2), textcoords="offset points", fontsize=6,
-                        zorder=9.1, color="black", path_effects=halo)
-    mc.style_axes(ax, extent, step=step)
+        lab.block_many(pl.geometry.x, pl.geometry.y, radius_px=4.0)
+
+    for _, r in C["river_labels"].iterrows():
+        lab.label(r.geometry.x, r.geometry.y, shorten(str(r["name"])),
+                  fontsize=6.5, style="italic", color="#1b4f72", zorder=9.1,
+                  halo=1.6)
+    for _, r in C["lake_labels"].iterrows():
+        c = r.geometry.representative_point()
+        lab.label(c.x, c.y, shorten(str(r["name"])), fontsize=7,
+                  style="italic", color="#1b4f72", zorder=9.1, halo=1.6)
+    for _, r in pl.iterrows():
+        # a WHITE halo: the calibration-perimeter style is a black stroke,
+        # which around black text just reads as bold
+        lab.label(r.geometry.x, r.geometry.y, shorten(str(r["name"])),
+                  fontsize=6, color="black", zorder=9.1, halo=1.6)
 
 
 def suptitle(fig, lines, *, fontsize=13, gap_in=0.16):
