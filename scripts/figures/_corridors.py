@@ -355,7 +355,7 @@ def federal_lands(bounds, agencies, inter):
     return out
 
 
-def decorate(ax, C, extent, *, step):
+def decorate(ax, C, extent, *, step, extra_handles=()):
     """Draw the context and every label onto one panel, front to back.
 
     Identical across both sheet formats on purpose: the corridor figures are
@@ -372,7 +372,9 @@ def decorate(ax, C, extent, *, step):
     # Federal land boundaries, where a window asks for them. Never clipped to
     # the window in code -- see federal_lands -- so the axes limits hide the
     # parts outside rather than drawing the frame as a boundary.
-    handles = []
+    # One legend per axis: a second ax.legend() call would replace this one,
+    # so anything a sheet wants listed comes in through extra_handles.
+    handles = list(extra_handles)
     rail = C.get("rail")
     if rail is not None and len(rail):
         # The conventional rail symbol, in two passes: a solid line with a
@@ -473,6 +475,24 @@ def suptitle(fig, lines, *, fontsize=13, gap_in=0.16):
 
 #: Below this, the KF gap fill is a footnote; above it, it belongs on the map.
 KF_NOTE_THRESHOLD = 0.05
+
+
+def unsupported_note(n, km, total):
+    """A disclosure line for channel the model has no real input over.
+
+    Staley's M1 reads terrain, fire and soil. Where no upslope cell reaches
+    23 degrees the terrain term is exactly zero, and where SSURGO never mapped
+    the soil the K-factor is a statewide median rather than a measurement --
+    so on ground that is both, the likelihood rests on a filled constant and a
+    simulated severity, with the soil term carrying ~91% of it. That is 15% of
+    the Test Site window and ~0% of Elko, which is why the gate is written
+    against the data rather than against a region.
+    """
+    if not n or n / max(total, 1) < 0.01:
+        return None
+    return (f"{n:,} segments ({n / total:.0%}, {km:,.0f} km) drawn grey: no "
+            f"mapped soil and no slope ≥23° upslope, so M1 has no measured "
+            f"input there — the channel is real, the number would not be")
 
 
 def kf_note(fraction, noun="basins"):

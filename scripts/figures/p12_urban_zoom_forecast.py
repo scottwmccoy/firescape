@@ -39,6 +39,7 @@ import numpy as np
 import pandas as pd
 import pyogrio
 from matplotlib.colors import BoundaryNorm, ListedColormap
+from matplotlib.lines import Line2D
 from rasterio.warp import transform_bounds
 from shapely.geometry import box
 
@@ -57,6 +58,7 @@ HU = paths.interim_dir("statewide") / "nv_hu10.geojson"
 HAZ = ListedColormap(["#4B9B6E", "#E8A33D", "#C1272D"])   # low / mod / high
 NORM = BoundaryNorm([0.5, 1.5, 2.5, 3.5], HAZ.N)
 SEG_LW = 0.4
+UNSUPPORTED = "#7A7A7A"   # neutral: a channel the model has no input for
 
 
 def statewide_median_kf():
@@ -124,15 +126,32 @@ for key in todo:
     seg["H_24mmh"] = hz.combined_c10(seg["P_24mmh"].to_numpy(),
                                      seg["V_24mmh"].to_numpy())
 
+    # Segments M1 has no real input for. The terrain term is exactly zero
+    # where no upslope cell reaches 23 degrees, and over the Test Site SSURGO
+    # never mapped the soil, so on that ground the likelihood is computed from
+    # a filled statewide-median K and a simulated severity alone -- the soil
+    # term carries ~91% of it. Those are drawn grey rather than coloured: the
+    # channel is still real, the number over it is not supported by anything
+    # measured there. Data-driven, so it is 15% of the NNSS window and ~0% of
+    # Elko, without the sheet special-casing a region.
+    seg["unsupported"] = gap & (T == 0)
+    uns, sup = seg[seg["unsupported"]], seg[~seg["unsupported"]]
+    uns_km = float(uns.to_crs("EPSG:5070").length.sum() / 1e3)
+    if len(uns):
+        print(f"no model input: {len(uns):,} segments ({len(uns)/len(seg):.1%}, "
+              f"{uns_km:,.0f} km) drawn grey", flush=True)
+
     tr, shape, extent = mc.grid(bounds, res=z["res"])
     print(f"display grid {shape[1]}x{shape[0]} @ {z['res']:g} deg", flush=True)
     hs = mc.hillshade(tr, shape)   # shade resolution follows the zoom
     C = cor.context(key)
     im_extent = (extent[0], extent[1], extent[2], extent[3])
 
-    thr = seg["I15_50"].to_numpy()
+    # Every reported number is over the supported segments only, so the colour
+    # scale is not stretched by ground the model cannot speak about.
+    thr = sup["I15_50"].to_numpy()
     lo, hi = np.percentile(thr[np.isfinite(thr)], [2, 98])
-    counts = seg["H_24mmh"].value_counts()
+    counts = sup["H_24mmh"].value_counts()
     med_thr = float(np.nanmedian(thr))
     net_km = float(seg.to_crs("EPSG:5070").length.sum() / 1e3)
 
@@ -144,12 +163,15 @@ for key in todo:
         # through a data layer; a 0.4 pt line covers so little of the canvas
         # that the hillshade is never buried, and washing it out would cost
         # the colour resolution the panel is for.
+        if len(uns):
+            uns.plot(ax=ax, color=UNSUPPORTED, linewidth=SEG_LW, zorder=4.5,
+                     rasterized=True)
         if mode == "threshold":
             # descending, so the channels that respond to the SMALLEST storm
             # end up drawn on top rather than buried under their neighbours
-            d = seg.sort_values("I15_50", ascending=False)
+            d = sup.sort_values("I15_50", ascending=False)
             d.plot(ax=ax, column="I15_50", cmap="plasma_r", linewidth=SEG_LW,
-                   vmin=lo, vmax=hi, zorder=5, legend=True,
+                   vmin=lo, vmax=hi, zorder=5, legend=True, rasterized=True,
                    legend_kwds={"shrink": 0.55, "pad": 0.02, "extend": "both",
                                 "label": "triggering $I_{15}$ (mm/h) "
                                          "at 50% likelihood"})
@@ -157,9 +179,9 @@ for key in todo:
             ax.set_title("Rainfall intensity that triggers a debris flow\n"
                          "lower = responds to a smaller storm", fontsize=10.5)
         else:
-            d = seg.sort_values("H_24mmh")          # high class drawn last
+            d = sup.sort_values("H_24mmh")          # high class drawn last
             d.plot(ax=ax, column="H_24mmh", cmap=HAZ, norm=NORM,
-                   linewidth=SEG_LW, zorder=5)
+                   linewidth=SEG_LW, zorder=5, rasterized=True)
             # A discrete colourbar rather than the in-map legend the
             # single-fire sheets carry. Both panels are aspect-locked, so a
             # colourbar on only one of them steals width from that panel
@@ -171,8 +193,9 @@ for key in todo:
             cb.set_label("combined hazard class (Cannon et al. 2010)")
             ax.set_title("Combined hazard class at the 24 mm/h reference storm\n"
                          "(≈1-year, 15-minute intensity)", fontsize=10.5)
-        ax.collections[-1].set_rasterized(True)
-        cor.decorate(ax, C, extent, step=z["step"])
+        cor.decorate(ax, C, extent, step=z["step"], extra_handles=(
+            [Line2D([0], [0], color=UNSUPPORTED, lw=1.4,
+                    label="no model input (see note)")] if len(uns) else []))
 
     q = np.nanpercentile(thr, [5, 95])
     fig.tight_layout(w_pad=0.4)
@@ -185,6 +208,7 @@ for key in todo:
         f"{int(counts.get(2, 0)):,} moderate, {int(counts.get(3, 0)):,} high "
         "— conditional on the basin burning",
         cor.kf_note(float(gap.mean()), "segments"),
+        cor.unsupported_note(len(uns), uns_km, len(seg)),
     ) if line])
     mc.save(fig, f"zoom_{key}_forecast_{VERSION}")
     plt.close(fig)
@@ -196,10 +220,13 @@ for key in todo:
         "network_length_km": round(net_km, 1),
         "hazard_class": {str(int(k)): int(v) for k, v in counts.items()},
         "kf_gap_filled": int(gap.sum()),
+        "unsupported_segments": int(len(uns)),
+        "unsupported_length_km": round(uns_km, 1),
+        "stats_over": "supported segments only (unsupported drawn grey)",
         "I15_50_mmh": {"p05": round(float(q[0]), 1),
                        "median": round(med_thr, 1),
                        "p95": round(float(q[1]), 1)},
-        "median_P_24mmh": round(float(np.nanmedian(seg["P_24mmh"])), 3),
+        "median_P_24mmh": round(float(np.nanmedian(sup["P_24mmh"])), 3),
         "segments_under_20_mmh": int((thr < 20).sum()),
     }
     out = PROD / f"zoom_{key}_forecast_summary.json"
