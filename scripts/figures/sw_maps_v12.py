@@ -61,7 +61,7 @@ for ax, (col, cmap, clim, title) in zip(axes, panels):
                        vmax=clim[1], extent=im_extent, alpha=0.6,
                        interpolation="antialiased")
         fig.colorbar(im, ax=ax, shrink=0.5, label=title)
-    mc.draw_context(ax, ctx)
+    mc.draw_context(ax, ctx, extent=extent)
     nv.boundary.plot(ax=ax, color="black", linewidth=1.0, zorder=8)
     fires.boundary.plot(ax=ax, zorder=8.5, **mc.fire_style("current"))
     mc.style_axes(ax, extent)

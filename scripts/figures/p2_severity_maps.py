@@ -73,7 +73,7 @@ axes[1].legend(handles=[Line2D([0], [0], marker="s", color="none",
 axes[1].set_title("Simulated BARC class (breaks 125 / 281 / 500)", fontsize=11)
 
 for ax in axes:
-    mc.draw_context(ax, ctx)
+    mc.draw_context(ax, ctx, extent=extent)
     nv.boundary.plot(ax=ax, color="black", linewidth=1.0, zorder=8)
     fires.boundary.plot(ax=ax, zorder=8.5, **mc.fire_style("current"))
     mc.style_axes(ax, extent)

@@ -134,7 +134,7 @@ for i, (col, cmap, clim, title) in enumerate(panels):
                    extent=im_extent, alpha=mc.MAX_LAYER_ALPHA,
                    interpolation="antialiased")
     fig.colorbar(im, ax=ax, shrink=0.62, pad=0.02)
-    mc.draw_context(ax, ctx, label_rivers=False)
+    mc.draw_context(ax, ctx, label_rivers=False, extent=extent)
     mc.style_axes(ax, extent)
     ax.set_title(title, fontsize=9.5)
 

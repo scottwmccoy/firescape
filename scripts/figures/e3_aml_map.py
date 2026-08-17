@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 from pyogrio import read_dataframe
+from stormscape.plot import Labeller
 
 from firescape import paths
 from firescape import plotting as mc
@@ -42,7 +43,7 @@ vmax = float(np.nanpercentile(exp["P_annual_site"], 99))
 fig, ax = plt.subplots(figsize=(9, 11.5), dpi=150)
 ax.imshow(hs, cmap="gray", vmin=0, vmax=1, extent=extent)
 blm.plot(ax=ax, facecolor="#D9C98C", edgecolor="none", alpha=0.28, zorder=1)
-mc.draw_context(ax, ctx)
+mc.draw_context(ax, ctx, extent=extent)
 nv.boundary.plot(ax=ax, color="black", linewidth=1.0, zorder=8)
 
 ax.scatter([p.x for p in clear["rep"]], [p.y for p in clear["rep"]],
@@ -60,11 +61,6 @@ cb.ax.tick_params(labelsize=7)
 top = sites.nsmallest(10, "rank")
 rows = []
 for _, r in top.iterrows():
-    ax.annotate(f"{int(r['rank'])}", (r["rep"].x, r["rep"].y),
-                xytext=(5, 4), textcoords="offset points", fontsize=8,
-                fontweight="bold", color="#C1272D", zorder=12,
-                path_effects=[matplotlib.patheffects.withStroke(
-                    linewidth=2, foreground="white")])
     name = next((str(v) for v in (r["name"], r["ftr_type"])
                  if isinstance(v, str) and v.strip()), "unnamed")[:22]
     county = str(r["county"])[:9] if isinstance(r["county"], str) else ""
@@ -105,5 +101,17 @@ fig.text(0.01, 0.005,
          "segment's threshold through the basin rain climatology.",
          fontsize=6, color="#444444")
 fig.tight_layout()
+
+# Numbering last, against the final layout: several of the top ten sit in the
+# Comstock cluster, where a fixed offset stacked them on one another.
+fig.canvas.draw()
+lab = Labeller(ax)
+lab.block_many([p.x for p in sites["rep"]], [p.y for p in sites["rep"]],
+               radius_px=3.0)
+for _, r in top.iterrows():
+    lab.label(r["rep"].x, r["rep"].y, f"{int(r['rank'])}", fontsize=8,
+              weight="bold", color="#C1272D", zorder=12,
+              force_leader=lab.crowded(r["rep"].x, r["rep"].y, radius_px=14))
+
 mc.save(fig, "aml_exposure_v2")
 print("saved figures/aml_exposure_v2.pdf")

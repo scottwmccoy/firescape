@@ -50,6 +50,75 @@ def test_default_display_grid_is_finer_than_a_print_pixel():
     assert 100 < metres < 200
 
 
+# --- shading the display grid ----------------------------------------------
+
+def test_statewide_grid_keeps_the_module_shading_resolution():
+    """A coarse domain is already shaded finer than it is drawn, so the rule
+    must not disturb it — statewide figures re-render byte-identical."""
+    from firescape import relief
+
+    tr, shape, _ = plotting.grid(
+        (-120.13, 34.97, -113.94, 42.03), res=plotting.RES_DEG)
+    assert plotting.grid_res_m(tr, shape) > relief.SHADE_RES_M
+    assert plotting.shade_resolution(tr, shape) == relief.SHADE_RES_M
+
+
+def test_zoom_grid_is_shaded_finer_than_its_own_pixels():
+    """relief.py rule 3. A zoom panel at ~43 m/px used to be shaded at the
+    statewide 50 m — coarser than it is drawn — and arrived pre-blurred."""
+    from firescape import relief
+
+    tr, shape, _ = plotting.grid((-119.75, 39.2, -119.5, 39.45), res=0.0005)
+    res_m = plotting.grid_res_m(tr, shape)
+    shade = plotting.shade_resolution(tr, shape)
+
+    assert res_m < relief.SHADE_RES_M           # the case that was broken
+    assert shade < res_m
+    assert shade == pytest.approx(res_m / 3.0, rel=1e-6)
+
+
+def test_shading_never_asks_for_finer_than_the_source_dem():
+    """3DEP is 1/3 arcsecond; asking below ~10 m buys time, not detail."""
+    tr, shape, _ = plotting.grid((-119.72, 39.50, -119.70, 39.52), res=0.00002)
+    assert plotting.shade_resolution(tr, shape) == 10.0
+
+
+def test_hillshade_cache_key_separates_two_windows_of_one_shape():
+    """The old key was resolution plus shading only, so a second window with
+    the same shape silently rendered the first window's terrain."""
+    a_tr, a_shape, _ = plotting.grid((-119.75, 39.2, -119.5, 39.45), res=0.001)
+    b_tr, b_shape, _ = plotting.grid((-117.75, 41.2, -117.5, 41.45), res=0.001)
+
+    assert a_shape == b_shape and a_tr.a == b_tr.a
+    assert (plotting._hillshade_cache(a_tr, a_shape, 30.0)
+            != plotting._hillshade_cache(b_tr, b_shape, 30.0))
+
+
+# --- panel windows ---------------------------------------------------------
+
+def test_square_window_is_square_on_screen_not_in_degrees():
+    w, s, e, n = plotting.square_window((-119.7, 39.3, -119.6, 39.35))
+    cos_lat = math.cos(math.radians((s + n) / 2))
+
+    assert (n - s) == pytest.approx((e - w) * cos_lat, rel=1e-9)
+    assert (n - s) < (e - w)                      # taller per degree up here
+    # the screen-space edges match, which is what removes the letterbox
+    assert (e - w) == pytest.approx((n - s) / cos_lat, rel=1e-9)
+
+
+def test_square_window_covers_the_requested_bounds_with_pad():
+    req = (-119.7, 39.3, -119.6, 39.35)
+    w, s, e, n = plotting.square_window(req, pad=0.02)
+    tol = 1e-9
+    assert w <= req[0] - 0.02 + tol and e >= req[2] + 0.02 - tol
+    assert s <= req[1] - 0.02 + tol and n >= req[3] + 0.02 - tol
+
+
+def test_tick_step_keeps_a_readable_number_of_ticks():
+    for span in (0.1, 0.3, 1.2, 4.0, 7.5):
+        assert span / plotting.tick_step(span) <= 6
+
+
 # --- axes ------------------------------------------------------------------
 
 def test_style_axes_labels_and_aspect(ax):

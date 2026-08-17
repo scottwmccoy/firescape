@@ -63,7 +63,7 @@ for ax, (col, cmap, _, title) in zip(axes, panels):
         cb.ax.yaxis.set_minor_locator(FixedLocator([]))
         cb.ax.yaxis.set_major_formatter(FuncFormatter(
             lambda x, _: f"{x:.3f}".rstrip("0").rstrip(".") if x > 0 else ""))
-    mc.draw_context(ax, ctx, label_rivers=False)
+    mc.draw_context(ax, ctx, label_rivers=False, extent=extent)
     nv.boundary.plot(ax=ax, color="black", linewidth=1.0, zorder=8)
     mc.style_axes(ax, extent)
     ax.set_title(title, fontsize=10)

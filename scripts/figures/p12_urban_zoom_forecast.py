@@ -45,7 +45,7 @@ from shapely.geometry import box
 import geopandas as gpd
 
 import _corridors as cor
-from firescape import hazard as hz, paths, plotting as mc, relief
+from firescape import hazard as hz, paths, plotting as mc
 
 VERSION = sys.argv[2] if len(sys.argv) > 2 else "statewide_v1_2"
 name = sys.argv[1] if len(sys.argv) > 1 else None
@@ -126,9 +126,7 @@ for key in todo:
 
     tr, shape, extent = mc.grid(bounds, res=z["res"])
     print(f"display grid {shape[1]}x{shape[0]} @ {z['res']:g} deg", flush=True)
-    hs = relief.shaded_relief(
-        sorted((paths.cache_root() / "3dep_tiles").glob("USGS_13_*.tif")),
-        tr, shape, crs="EPSG:4326", shade_res_m=30.0)
+    hs = mc.hillshade(tr, shape)   # shade resolution follows the zoom
     C = cor.context(key)
     im_extent = (extent[0], extent[1], extent[2], extent[3])
 

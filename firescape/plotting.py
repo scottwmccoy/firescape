@@ -110,15 +110,65 @@ def grid(bounds4326, res: float = RES_DEG):
     return from_origin(w, n, res, res), (height, width), (w, e, s, n)
 
 
-def hillshade(transform, shape, *, shade_res_m: float = None, tile_dir=None):
-    """Cached hillshade on a display grid; see :mod:`firescape.relief`."""
+def grid_res_m(transform, shape) -> float:
+    """Ground size of one display pixel, in metres, for an EPSG:4326 grid."""
+    lat = transform.f + transform.e * shape[0] / 2.0
+    return abs(transform.a) * 111_320 * math.cos(math.radians(lat))
+
+
+def shade_resolution(transform, shape) -> float:
+    """Metric resolution to shade a display grid at.
+
+    :mod:`firescape.relief` rule 3 is *shade finer than the display grid, then
+    average down* — landforms smaller than a display pixel are what give a
+    hillshade its texture. :data:`relief.SHADE_RES_M` is a single statewide
+    constant, so a zoomed panel used to be shaded **coarser** than its own
+    pixels (50 m under a 15 m grid) and arrived pre-blurred; the district and
+    urban-zoom sheets each worked around it by calling
+    :func:`relief.shaded_relief` directly with a hand-picked value.
+
+    The module constant is kept wherever it already puts two shaded cells in a
+    display pixel — which is every statewide figure, so those re-render
+    unchanged — and only a grid it cannot satisfy is refined, to a third of the
+    display pixel. The floor is the 10 m 3DEP grid the tiles are sampled at;
+    asking for finer buys time, not detail.
+    """
     from firescape import relief
 
-    shade_res_m = relief.SHADE_RES_M if shade_res_m is None else shade_res_m
+    res_m = grid_res_m(transform, shape)
+    if relief.SHADE_RES_M <= res_m / 2.0:
+        return relief.SHADE_RES_M
+    return max(10.0, res_m / 3.0)
+
+
+def _hillshade_cache(transform, shape, shade_res_m):
+    """Cache path for one shaded grid.
+
+    Keyed on the grid **origin** as well as its resolution: two windows can
+    easily share a resolution and a shape, and the older resolution-only key
+    let the second one silently render the first one's terrain.
+    """
+    import hashlib
+
+    stamp = (f"{transform.c:.6f},{transform.f:.6f},{transform.a:.8f},"
+             f"{shape[0]}x{shape[1]},{shade_res_m:.2f}")
+    key = hashlib.sha1(stamp.encode()).hexdigest()[:10]
+    return (paths.interim_dir("statewide")
+            / f"hs4326_{abs(transform.a):g}_shade{shade_res_m:g}_{key}.npz")
+
+
+def hillshade(transform, shape, *, shade_res_m: float = None, tile_dir=None):
+    """Cached hillshade on a display grid; see :mod:`firescape.relief`.
+
+    ``shade_res_m`` defaults to :func:`shade_resolution` for the grid, which is
+    what keeps a zoomed panel from being shaded coarser than it is drawn.
+    """
+    from firescape import relief
+
+    if shade_res_m is None:
+        shade_res_m = shade_resolution(transform, shape)
     tile_dir = tile_dir or (paths.cache_root() / "3dep_tiles")
-    res_deg = abs(transform.a)
-    cache = (paths.interim_dir("statewide")
-             / f"hs4326_{res_deg:g}_shade{shade_res_m:g}.npz")
+    cache = _hillshade_cache(transform, shape, shade_res_m)
     if cache.exists():
         cached = np.load(cache)["hs"]
         if cached.shape == tuple(shape):
@@ -128,6 +178,32 @@ def hillshade(transform, shape, *, shade_res_m: float = None, tile_dir=None):
                               shade_res_m=shade_res_m)
     np.savez_compressed(cache, hs=hs)
     return hs
+
+
+def square_window(bounds4326, *, pad: float = 0.0):
+    """Expand ``(w, s, e, n)`` to a window that is square *on screen*.
+
+    :func:`style_axes` gives an axis a ``1/cos(lat)`` aspect, so a window
+    square in degrees draws ~1.3x taller than wide at Nevada latitudes and
+    letterboxes inside its subplot box. Squaring in screen units is what
+    removes that white space, and it is the only reason a panel's degree span
+    is not square.
+    """
+    w, s, e, n = bounds4326
+    w, s, e, n = w - pad, s - pad, e + pad, n + pad
+    cx, cy = (w + e) / 2.0, (s + n) / 2.0
+    cos_lat = math.cos(math.radians(cy))
+    span = max(e - w, (n - s) / cos_lat)
+    return (cx - span / 2, cy - span * cos_lat / 2,
+            cx + span / 2, cy + span * cos_lat / 2)
+
+
+def tick_step(span_deg: float) -> float:
+    """Degree tick interval giving at most ~6 ticks across ``span_deg``."""
+    for step in (0.05, 0.1, 0.2, 0.25, 0.5, 1.0, 2.0):
+        if span_deg / step <= 6:
+            return step
+    return 5.0
 
 
 def burn(gdf, column: str, transform, shape):
@@ -217,8 +293,19 @@ def fetch_context(bounds4326=None, *, cache_dir=None):
 
 
 def draw_context(ax, ctx, *, label_cities: bool = True,
-                 label_rivers: bool = True):
-    """Draw reference context onto an axis, in reading order back to front."""
+                 label_rivers: bool = True, extent=None):
+    """Draw reference context onto an axis, in reading order back to front.
+
+    Pass ``extent`` (the ``(w, e, s, n)`` from :func:`grid`) to get
+    collision-aware labels: names are placed through
+    :class:`stormscape.plot.Labeller`, which moves a label that would land on
+    another one or run off the frame, and connects it with a leader once it
+    has moved far enough to be ambiguous. That placement is computed in
+    display coordinates, so the axis limits have to be final first — which is
+    why the extent is passed here rather than left to a later
+    :func:`style_axes` call. Without it the labels still avoid each other, but
+    against whatever limits the axis has at the time.
+    """
     import matplotlib.patheffects as pe
 
     # Every layer is checked for emptiness first. Plotting an empty
@@ -255,23 +342,29 @@ def draw_context(ax, ctx, *, label_cities: bool = True,
     places = ctx["places"]
     ax.scatter(places.geometry.x, places.geometry.y, s=9, color="black",
                edgecolor="white", linewidth=0.5, zorder=9)
+
+    if extent is not None:
+        style_axes(ax, extent)          # placement needs the final frame
+    from stormscape.plot import Labeller, interior_point, shorten
+
+    lab = Labeller(ax)
+    lab.block_many(places.geometry.x, places.geometry.y, radius_px=4.5)
     if label_cities:
         for _, row in places.iterrows():
-            ax.annotate(row["name"], (row.geometry.x, row.geometry.y),
-                        xytext=(3, 3), textcoords="offset points",
-                        fontsize=5.5, color="black", zorder=9.1,
-                        path_effects=[pe.withStroke(linewidth=1.6,
-                                                    foreground="white")])
+            lab.label(row.geometry.x, row.geometry.y, shorten(row["name"]),
+                      fontsize=5.5, color="black", zorder=9.1, halo=1.6)
     if label_rivers:
+        w, e = ax.get_xlim()
+        s, n = ax.get_ylim()
         for _, row in ctx["rivers"].iterrows():
             name = row.get("name")
             if not name:
                 continue
-            pt = row.geometry.representative_point()
-            ax.annotate(str(name), (pt.x, pt.y), fontsize=5, style="italic",
-                        color="#1b4f72", zorder=9.1,
-                        path_effects=[pe.withStroke(linewidth=1.4,
-                                                    foreground="white")])
+            pt = interior_point(row.geometry, (w, s, e, n))
+            if pt is None:
+                continue
+            lab.label(pt[0], pt[1], shorten(str(name)), fontsize=5,
+                      style="italic", color="#1b4f72", zorder=9.1, halo=1.4)
 
 
 def style_axes(ax, extent, *, step: float = 1.0):

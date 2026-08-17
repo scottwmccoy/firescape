@@ -3,7 +3,7 @@
 The statewide sheet answers "where in the state", which is the wrong question
 for a planner in Washoe or White Pine County. These render the same v1.2
 product at a scale where an individual drainage above a subdivision is
-legible: a ~50 m display grid, hillshade shaded at 30 m, sub-degree graticule
+legible: a ~50 m display grid, hillshade shaded to match it, sub-degree graticule
 ticks, and every incorporated place labelled rather than the statewide city
 whitelist. The windows themselves live in :mod:`_corridors`.
 
@@ -40,7 +40,7 @@ from matplotlib.ticker import FixedLocator, FuncFormatter
 from pyogrio import read_dataframe
 
 import _corridors as cor
-from firescape import paths, plotting as mc, relief
+from firescape import paths, plotting as mc
 
 VERSION = sys.argv[2] if len(sys.argv) > 2 else "statewide_v1_2"
 
@@ -69,9 +69,7 @@ for key in todo:
 
     tr, shape, extent = mc.grid(bounds, res=z["res"])
     print(f"display grid {shape[1]}x{shape[0]} @ {z['res']:g} deg", flush=True)
-    hs = relief.shaded_relief(
-        sorted((paths.cache_root() / "3dep_tiles").glob("USGS_13_*.tif")),
-        tr, shape, crs="EPSG:4326", shade_res_m=30.0)
+    hs = mc.hillshade(tr, shape)   # shade resolution follows the zoom
     C = cor.context(key)
     print(f"{len(C['rivers'])} reaches of "
           f"{sorted(C['river_labels']['name'].astype(str))}", flush=True)

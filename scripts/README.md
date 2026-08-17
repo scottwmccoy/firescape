@@ -137,6 +137,22 @@ looks, and the repo CLAUDE.md for the DEM-resampling traps. `plotting.save`
 writes **PDF only** — pass `formats=("png", "pdf")` if something downstream
 needs a raster.
 
+Three rules a zoomed sheet has to keep, each one learned by breaking it:
+
+* **Take the hillshade from `plotting.hillshade`, never `relief.shaded_relief`
+  directly.** It sizes the shading resolution to the window — relief.py rule 3
+  is *shade finer than the display grid*, and a panel shaded at the statewide
+  50 m under a 15 m grid arrives pre-blurred — and it keys its cache on the
+  grid origin, so two windows of one shape cannot swap terrain.
+* **Pass `extent=` to `draw_context`, and label after the layout is final.**
+  Names are placed through `stormscape.plot.Labeller`, which moves a label
+  that would land on another one or leave the frame; placement is computed in
+  display coordinates, so the axes limits have to be set first.
+* **`rasterized=True` on any collection with more than a few thousand
+  members.** The district sheet was 57 MB as vectors and 4 MB rasterized, for
+  no visible difference — each segment is a couple of pixels at print scale.
+  Text, markers and leaders stay vector.
+
 ## verify/ — Planet-imagery event verification (design: docs/planet_verification_design.md)
 
 The stack–z–segment chain: epoch medians of PlanetScope SR → robust z →
