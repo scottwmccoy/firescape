@@ -89,6 +89,27 @@ def test_site_annual(assets, segments):
     assert np.isnan(out["P_annual_site"].iloc[2])
 
 
+def test_nearest_receptor_names_and_radius(assets):
+    waters = gpd.GeoDataFrame(
+        {"name": ["Sixmile Creek", "Far Lake"], "kind": ["perennial", "lake"]},
+        geometry=[box(-600, 400, -400, 600), box(20000, 0, 20100, 100)],
+        crs=CRS)
+    rec = exposure.nearest_receptor(assets, waters, cols=("name", "kind"),
+                                    max_m=5000.0)
+    assert rec.loc[0, "water_dist_m"] == pytest.approx(390.0, abs=1.0)
+    assert rec.loc[0, "name"] == "Sixmile Creek"
+    assert rec.loc[0, "kind"] == "perennial"
+    # the remote site's nearest water is beyond the question radius
+    assert np.isnan(rec.loc[2, "water_dist_m"]) and pd.isna(rec.loc[2, "name"])
+
+
+def test_within_any(assets):
+    blm = gpd.GeoDataFrame(
+        geometry=[box(-1000, 0, 1000, 2000)], crs=CRS)
+    flag = exposure.within_any(assets, blm)
+    assert flag.tolist() == [True, False, False]
+
+
 def test_water_distance_and_rank(assets, segments):
     waters = gpd.GeoDataFrame(
         geometry=[box(-600, 400, -400, 600)], crs=CRS)

@@ -1,10 +1,15 @@
-"""AML waste exposure vs the statewide v1.2 network -> products/exposure/aml_v1.
+"""AML waste exposure vs the statewide v1.2 network -> products/exposure/aml_v2.
 
 Joins the staged USMIN waste footprints (dumps, tailings, ponds) against the
 per-unit v1.2 segment products with exposure.hazard_at_assets (corridor-width
 delivery, nearest-within-1-km otherwise), computes per-site annual rates
-through the merged-basin rain climatology, adds receptor distance to the
-Natural Earth rivers/lakes, and writes the ranked site table.
+through the merged-basin rain climatology, names each site's nearest NHD
+receptor water (perennial or GNIS-named, 10 km question radius; needs
+e1c_stage_nhd_receptors.py), flags sites on BLM-managed land (needs
+e1b_stage_blm.py), and writes the ranked site table.
+
+v1 (NE rivers/lakes receptors, no manager flag) is preserved in
+products/exposure/aml_v1 as run at commit 57af036.
 """
 import json
 import subprocess
@@ -23,10 +28,11 @@ from shapely.geometry import box as sbox
 from firescape import exposure, paths
 
 V12 = paths.products_dir("prefire", "statewide_v1_2")
-OUT = paths.products_dir("exposure", "aml_v1")
+OUT = paths.products_dir("exposure", "aml_v2")
 CRS = "EPSG:5070"
 PAD = 2000.0        # m around assets when reading a unit; > near_max + w_max/2
 PAD_M, NEAR_M = 25.0, 1000.0
+RECEPTOR_M = 10_000.0   # beyond this, "no mapped receptor" is the answer
 
 mines = gpd.read_file(paths.raw_dir("usmin") / "nv_mines.gpkg")
 waste = mines[mines["group"] == "waste"].reset_index(drop=True).to_crs(CRS)
@@ -83,13 +89,18 @@ basins = pyogrio.read_dataframe(
 print(f"{len(basins)} basins for site climatology", flush=True)
 ann = exposure.site_annual(hz, waste, basins)
 
-bdir = paths.raw_dir("boundaries")
-waters4326 = pd.concat([
-    gpd.read_file(f"zip://{bdir / z}")[["geometry"]]
-    for z in ("ne_10m_rivers_lake_centerlines.zip", "ne_10m_lakes.zip")])
-wb = waste.to_crs(4326).total_bounds
-waters = waters4326.cx[wb[0] - 1:wb[2] + 1, wb[1] - 1:wb[3] + 1].to_crs(CRS)
-ann["water_dist_m"] = exposure.water_distance(waste, waters)
+receptors = gpd.read_file(
+    paths.interim_dir("exposure") / "nhd_receptors.gpkg").to_crs(CRS)
+print(f"{len(receptors)} NHD receptor features", flush=True)
+rec = exposure.nearest_receptor(waste, receptors, cols=("name", "kind"),
+                                max_m=RECEPTOR_M)
+ann["water_dist_m"] = rec["water_dist_m"]
+ann["water_name"] = rec["name"]
+ann["water_kind"] = rec["kind"]
+
+blm = gpd.read_file(paths.raw_dir("blm") / "nv_blm_sma.gpkg").to_crs(CRS)
+ann["on_blm"] = exposure.within_any(waste, blm)
+print(f"{int(ann['on_blm'].sum())} sites on BLM-managed land", flush=True)
 
 ranked = exposure.rank(ann)
 keep = ["name", "ftr_type", "county", "topo_name", "topo_date", "geom_kind",
@@ -115,8 +126,13 @@ sha = subprocess.run(["git", "-C", str(paths.Path(__file__).resolve().parents[2]
                "assets_sha256": json.loads(
                    (paths.raw_dir("usmin") / "nv_mines.gpkg.provenance.json")
                    .read_text()).get("sha256"),
-               "waters": "NE 10m rivers + lakes (receptor context only)"},
+               "waters": "interim/exposure/nhd_receptors.gpkg (NHDPlus-HR "
+                         "perennial or GNIS-named flowlines + named "
+                         "waterbodies; straight-line, not routed)",
+               "lands": "raw/blm/nv_blm_sma.gpkg (BLM SMA, ~30 m "
+                        "simplification)"},
     "params": {"pad_m": PAD_M, "near_max_m": NEAR_M, "unit_pad_m": PAD,
+               "receptor_max_m": RECEPTOR_M,
                "width_law": "w_min 9 + 12*sqrt(A) capped 60"},
     "n_assets": int(len(out)), "n_exposed": int(out["exposed"].sum()),
 }, indent=2) + "\n")
@@ -125,10 +141,15 @@ near = (~out["exposed"]) & out["dist_m"].notna()
 print(f"\nexposed (corridor hit): {int(out['exposed'].sum())}   "
       f"near (<{NEAR_M:.0f} m): {int(near.sum())}   "
       f"clear: {int(out['dist_m'].isna().sum())}")
+exp_blm = out["exposed"] & out["on_blm"]
+print(f"on BLM-managed land: {int(out['on_blm'].sum())} of {len(out)} "
+      f"({int(exp_blm.sum())} of the exposed)")
 top = out.head(15).copy()
 top["site"] = top["name"].fillna(top["ftr_type"])
 top["RI_yr"] = (1.0 / top["P_annual_site"]).round(0)
 top["water_km"] = (top["water_dist_m"] / 1000).round(1)
-print(top[["site", "county", "P_24mmh", "V_24mmh", "P_annual_site",
-           "RI_yr", "n_deliver", "water_km"]].to_string())
+top["receptor"] = top["water_name"].fillna("(" + top["water_kind"] + ")") \
+    .fillna("none<10km")
+print(top[["site", "county", "P_24mmh", "P_annual_site", "RI_yr",
+           "n_deliver", "receptor", "water_km", "on_blm"]].to_string())
 print(f"\nwrote {OUT}")

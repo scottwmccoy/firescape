@@ -24,10 +24,11 @@ from firescape import plotting as mc
 plt.rcParams["image.cmap"] = "viridis"
 
 sites = read_dataframe(
-    paths.products_dir("exposure", "aml_v1") / "aml_exposure.gpkg"
+    paths.products_dir("exposure", "aml_v2") / "aml_exposure.gpkg"
 ).to_crs("EPSG:4326")
 sites["rep"] = sites.geometry.representative_point()
 nv = gpd.read_file(paths.raw_dir("boundaries") / "nv_state.geojson").to_crs(4326)
+blm = gpd.read_file(paths.raw_dir("blm") / "nv_blm_sma.gpkg").to_crs(4326)
 
 transform, shape, extent = mc.grid(mc.domain_bounds4326())
 hs = mc.hillshade(transform, shape)
@@ -40,6 +41,7 @@ vmax = float(np.nanpercentile(exp["P_annual_site"], 99))
 
 fig, ax = plt.subplots(figsize=(9, 11.5), dpi=150)
 ax.imshow(hs, cmap="gray", vmin=0, vmax=1, extent=extent)
+blm.plot(ax=ax, facecolor="#D9C98C", edgecolor="none", alpha=0.28, zorder=1)
 mc.draw_context(ax, ctx)
 nv.boundary.plot(ax=ax, color="black", linewidth=1.0, zorder=8)
 
@@ -64,10 +66,11 @@ for _, r in top.iterrows():
                 path_effects=[matplotlib.patheffects.withStroke(
                     linewidth=2, foreground="white")])
     name = next((str(v) for v in (r["name"], r["ftr_type"])
-                 if isinstance(v, str) and v.strip()), "unnamed")[:24]
+                 if isinstance(v, str) and v.strip()), "unnamed")[:22]
     county = str(r["county"])[:9] if isinstance(r["county"], str) else ""
-    rows.append(f"{int(r['rank']):>2}  {name:<24} {county:<9} "
-                f"1-in-{1 / r['P_annual_site']:,.0f} yr")
+    rows.append(f"{int(r['rank']):>2}  {name:<22} {county:<9} "
+                f"1-in-{1 / r['P_annual_site']:,.0f} yr "
+                f"{'BLM' if r['on_blm'] else '   '}")
 ax.text(0.985, 0.015,
         "highest-exposure sites\n" + "\n".join(rows),
         transform=ax.transAxes, ha="right", va="bottom", fontsize=6.8,
@@ -85,6 +88,8 @@ ax.legend(handles=[
     Line2D([0], [0], marker=".", color="none", markerfacecolor="#888888",
            markeredgecolor="none", markersize=6,
            label=f"clear (> 1 km) ({len(clear)})"),
+    matplotlib.patches.Patch(facecolor="#D9C98C", alpha=0.5,
+                             label="BLM-managed land"),
 ], loc="lower left", fontsize=7.5, title="USMIN mine-waste sites",
     title_fontsize=8, framealpha=0.85)
 
@@ -100,5 +105,5 @@ fig.text(0.01, 0.005,
          "segment's threshold through the basin rain climatology.",
          fontsize=6, color="#444444")
 fig.tight_layout()
-mc.save(fig, "aml_exposure_v1")
-print("saved figures/aml_exposure_v1.pdf")
+mc.save(fig, "aml_exposure_v2")
+print("saved figures/aml_exposure_v2.pdf")

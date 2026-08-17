@@ -182,19 +182,48 @@ def site_annual(hz: pd.DataFrame, assets: gpd.GeoDataFrame,
     return out
 
 
-def water_distance(assets: gpd.GeoDataFrame,
-                   waters: gpd.GeoDataFrame) -> pd.Series:
-    """Distance (m) from each asset to the nearest mapped water feature.
+def nearest_receptor(assets: gpd.GeoDataFrame, waters: gpd.GeoDataFrame, *,
+                     cols=(), max_m: float | None = None) -> pd.DataFrame:
+    """Nearest water feature per asset: ``water_dist_m`` plus carried ``cols``.
 
-    Receptor context for the pollution pathway, at whatever fidelity
-    ``waters`` carries — with Natural Earth layers this means major perennial
-    rivers and lakes only, so treat it as "how far to a receptor that is
-    certainly there", not full NHD connectivity.
+    Receptor context for the pollution pathway at whatever fidelity
+    ``waters`` carries — straight-line proximity, not routed connectivity.
+    With ``cols=("name", "kind")`` on an NHD receptor layer each site learns
+    *which* water it threatens; beyond ``max_m`` everything is NaN, which
+    reads as "no mapped receptor within the question radius".
     """
     _check_metric(assets, waters)
-    near = gpd.sjoin_nearest(assets[["geometry"]], waters[["geometry"]],
-                             how="left", distance_col="water_dist_m")
-    return near.groupby(level=0)["water_dist_m"].min()
+    keep = [c for c in cols if c in waters.columns]
+    near = gpd.sjoin_nearest(assets[["geometry"]],
+                             waters[keep + ["geometry"]], how="left",
+                             max_distance=max_m, distance_col="water_dist_m")
+    near = near.sort_values("water_dist_m")
+    near = near[~near.index.duplicated(keep="first")]
+    return near[["water_dist_m"] + keep].reindex(assets.index)
+
+
+def water_distance(assets: gpd.GeoDataFrame,
+                   waters: gpd.GeoDataFrame) -> pd.Series:
+    """Distance (m) from each asset to the nearest mapped water feature."""
+    return nearest_receptor(assets, waters)["water_dist_m"]
+
+
+def within_any(assets: gpd.GeoDataFrame,
+               polygons: gpd.GeoDataFrame) -> pd.Series:
+    """Boolean per asset: representative point inside any of ``polygons``.
+
+    The land-manager flag (e.g. staged BLM SMA holdings). Point-in-polygon on
+    the representative point, so a footprint straddling a parcel line is
+    attributed to the parcel holding its interior point.
+    """
+    _check_metric(assets, polygons)
+    pts = gpd.GeoDataFrame(geometry=assets.geometry.representative_point(),
+                           crs=assets.crs)
+    hit = gpd.sjoin(pts, polygons[["geometry"]], predicate="within",
+                    how="inner")
+    out = pd.Series(False, index=assets.index)
+    out.loc[hit.index.unique()] = True
+    return out
 
 
 def rank(df: pd.DataFrame) -> pd.DataFrame:

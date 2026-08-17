@@ -41,6 +41,8 @@ CDF refit.
 | `p2_regions.py` | the four NV prefire regions, folded from EPA Level III ecoregions |
 | `p3_ranges_stage.py` | NSHM-2023 PGA predictor for the RANGES volume model |
 | `e1_stage_usmin.py` | USMIN mine features for NV (waste + openings) → `raw/usmin/nv_mines.gpkg`; the waste polygons are the AML exposure assets |
+| `e1b_stage_blm.py` | BLM SMA holdings for NV (14 dissolved polys, 66% of the state, ~30 m simplification) → `raw/blm/nv_blm_sma.gpkg` |
+| `e1c_stage_nhd_receptors.py` | NHD receptor waters near the AML sites (perennial or GNIS-named, server-side filter; per-cell cache, threaded) → `interim/exposure/nhd_receptors.gpkg` |
 | `sw_stage_chain.sh`, `sw_stage_pass.sh` | chain/relaunch wrappers for the above |
 
 ## calibrate/ — severity CDFs and P_dsim
@@ -162,7 +164,7 @@ dtype=np.float16)`) — the Dolan grid is ~36M px × 30 frames.
 |---|---|
 |  `p5_inventory_pack.py` | builds the manual-survey package: 4.24 M-segment GPKG, regionated KMZ tiles by HU8, hot-segment layer, priority sheet |
 | `p2_hindcast_batch.py`, `p2_hindcast_fig.py` | observed-severity hindcasts for historic fires (M6 validation). The batch script invokes the figure script **by path** — keep them in the same directory |
-| `e2_aml_exposure.py` | AML waste sites vs the v1.2 network (`firescape.exposure`: corridor delivery → site annual rates → receptor distance) → ranked `products/exposure/aml_v1/`; map = `figures/e3_aml_map.py` |
+| `e2_aml_exposure.py` | AML waste sites vs the v1.2 network (`firescape.exposure`: corridor delivery → site annual rates → named NHD receptor → BLM flag) → ranked `products/exposure/aml_v2/`; maps = `figures/e3_aml_map.py` (statewide) + `figures/e4_aml_districts.py` (district sheets) |
 
 ### Active-fire pipeline (`p8_*`, `p9_*`)
 
