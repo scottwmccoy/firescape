@@ -200,7 +200,7 @@ def square_window(bounds4326, *, pad: float = 0.0):
 
 def tick_step(span_deg: float) -> float:
     """Degree tick interval giving at most ~6 ticks across ``span_deg``."""
-    for step in (0.05, 0.1, 0.2, 0.25, 0.5, 1.0, 2.0):
+    for step in (0.01, 0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1.0, 2.0):
         if span_deg / step <= 6:
             return step
     return 5.0

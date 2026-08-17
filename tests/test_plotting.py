@@ -115,8 +115,13 @@ def test_square_window_covers_the_requested_bounds_with_pad():
 
 
 def test_tick_step_keeps_a_readable_number_of_ticks():
-    for span in (0.1, 0.3, 1.2, 4.0, 7.5):
+    for span in (0.05, 0.09, 0.1, 0.3, 1.2, 4.0, 7.5):
         assert span / plotting.tick_step(span) <= 6
+
+
+def test_tick_step_still_labels_a_district_window():
+    """A ~10 km window spans <0.1 deg; a 0.05 floor left it with one tick."""
+    assert 2 <= 0.09 / plotting.tick_step(0.09) <= 6
 
 
 # --- axes ------------------------------------------------------------------
