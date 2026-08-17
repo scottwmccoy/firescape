@@ -71,14 +71,22 @@ for cy in range(WIN, H-WIN, WIN//2):
 cands.sort(reverse=True)
 print(f"{len(cands)} valid windows; probing top 12 by relief", flush=True)
 
+from scipy.signal import fftconvolve
 acc = []
-print(f"{'win':>4} {'relief':>7} {'dy':>7} {'dx':>7} {'err':>6}  verdict")
+print(f"{'win':>4} {'relief':>7} {'dy':>7} {'dx':>7} {'prom':>6}  verdict")
 for i, (relief, vf, s, cy, cx) in enumerate(cands[:12]):
-    shift, err, _ = phase_cross_correlation(M[s], O[s], upsample_factor=10,
-                                            normalization="phase")
-    dy, dx = -float(shift[0]), -float(shift[1])
-    ok = (abs(dy) <= MAX_SHIFT and abs(dx) <= MAX_SHIFT and err < 0.72)
-    print(f"{i:>4} {relief:>7.4f} {dy:>7.1f} {dx:>7.1f} {err:>6.3f}  "
+    a, bw = M[s] - M[s].mean(), O[s] - O[s].mean()
+    c = fftconvolve(bw, a[::-1, ::-1], mode="same")
+    cy2, cx2 = np.array(c.shape) // 2
+    w = c[cy2-MAX_SHIFT:cy2+MAX_SHIFT+1, cx2-MAX_SHIFT:cx2+MAX_SHIFT+1]
+    pk = np.unravel_index(np.argmax(w), w.shape)
+    core = w[max(pk[0]-1,0):pk[0]+2, max(pk[1]-1,0):pk[1]+2].mean()
+    mad = np.median(np.abs(w - np.median(w))) + 1e-12
+    prom = (core - np.median(w)) / (1.4826 * mad)
+    dy, dx = float(pk[0]-MAX_SHIFT), float(pk[1]-MAX_SHIFT)
+    on_edge = pk[0] in (0, w.shape[0]-1) or pk[1] in (0, w.shape[1]-1)
+    ok = (not on_edge) and prom >= 8.0
+    print(f"{i:>4} {relief:>7.4f} {dy:>7.1f} {dx:>7.1f} {prom:>6.1f}  "
           f"{'ACCEPT' if ok else 'reject'}", flush=True)
     if ok:
         acc.append((dy, dx))
