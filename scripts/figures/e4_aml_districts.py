@@ -1,9 +1,14 @@
 """District sheets for the AML exposure ranking -> figures/aml_districts_v2.pdf.
 
 Two data-driven windows around the top-ranked clusters (split at 40 N), each
-showing the mechanism the statewide dots compress: the hazard network colored
-by likelihood, the corridors delivering into named NHD receptor waters, BLM
-holdings shaded, and the ranked waste sites numbered.
+showing the mechanism the statewide dots compress: the modelled debris-flow
+channels coloured by likelihood, drawn over the named NHD streams they drain
+into, with BLM holdings shaded and the ranked waste sites numbered.
+
+A site is "near-channel" when it lies within 30–55 m of a modelled channel —
+half a corridor 9–60 m wide that widens with contributing area, plus 25 m for
+registration. Stated as a distance rather than as "in a delivery corridor",
+which sounded like a runout result and is not one.
 
 Three sheet-scale rules this file needs, all of which now live in the
 libraries rather than here:
@@ -61,6 +66,15 @@ ctx = mc.fetch_context()          # statewide cache; clipped per window below
 ubounds = json.loads(
     (paths.interim_dir("exposure") / "unit_bounds_v1_2.json").read_text())
 
+#: Waters carrying a perennial reach ANYWHERE in the state. Resolved once, off
+#: the whole receptor set rather than per window, or a river whose perennial
+#: reaches happen to fall outside a panel would be drawn intermittent in that
+#: panel and perennial in the next one.
+PER_NAMES = set(receptors.loc[(receptors["src"] == "fl")
+                              & (receptors["kind"] == "perennial stream"),
+                              "name"].dropna())
+print(f"{len(PER_NAMES)} named waters carry a perennial reach", flush=True)
+
 top = sites.nsmallest(TOPN, "rank")
 vmax = float(np.nanpercentile(
     sites.loc[sites["exposed"].astype(bool), "P_annual_site"], 99))
@@ -109,29 +123,40 @@ for i, (label, win) in enumerate(panels):
     segs = pd.concat(segs).to_crs(4326).explode(index_parts=False)
     segs = segs[segs.geometry.type == "LineString"]
     segs = segs[segs["P_24mmh"] >= P_FLOOR].sort_values("P_24mmh")
-    print(f"  {len(segs)} network segments drawn (rasterized)", flush=True)
+    # Named water goes down FIRST and the modelled channels over the top of
+    # it. The sheet's claim is that these debris-flow channels drain into
+    # named streams, and drawing the receiving water above its own tributaries
+    # inverted that: the network has to be seen arriving at the blue line.
+    rec = receptors.cx[win[0]:win[2], win[1]:win[3]]
+    wbod = rec[rec["src"] == "wb"]
+    fl = rec[rec["src"] == "fl"].copy()
+    # Class per named watercourse, not per reach. NHD splits a river into
+    # reaches carrying their own FCodes — the Carson River is perennial
+    # (46006) along some and artificial-path or intermittent along others —
+    # so classing reach by reach made a single river alternate dark solid and
+    # light dashed down its length. A water that is perennial anywhere is
+    # drawn perennial everywhere.
+    is_per = (fl["kind"] == "perennial stream") | fl["name"].isin(PER_NAMES)
+    per, oth = fl[is_per], fl[~is_per]
+    if len(wbod):
+        wbod.plot(ax=ax, facecolor="#9ECAE1", edgecolor="#0072B2",
+                  linewidth=0.4, alpha=0.75, zorder=2.0, rasterized=True)
+    if len(oth):
+        oth.plot(ax=ax, color="#56B4E9", linewidth=0.55,
+                 linestyle=(0, (4, 2)), zorder=2.2, rasterized=True)
+    if len(per):
+        per.plot(ax=ax, color="#0072B2", linewidth=1.2, zorder=2.4,
+                 rasterized=True)
+
+    print(f"  {len(segs)} network segments drawn (rasterized); "
+          f"receptors {len(per)} perennial / {len(oth)} intermittent / "
+          f"{len(wbod)} waterbody", flush=True)
     net = ax.add_collection(LineCollection(
         [np.asarray(g.coords) for g in segs.geometry],
         array=segs["P_24mmh"].to_numpy(), cmap="magma_r",
         clim=(P_FLOOR, P_CEIL),
         linewidths=np.clip(0.2 + 0.3 * np.sqrt(segs["Area_km2"]), 0.2, 1.1),
-        alpha=0.75, zorder=3, rasterized=True))
-
-    # Receptors: at or below the weight of the widest hazard channel (1.1),
-    # so the water reads as context and the hazard stays the subject.
-    rec = receptors.cx[win[0]:win[2], win[1]:win[3]]
-    wbod = rec[rec["src"] == "wb"]
-    per = rec[(rec["src"] == "fl") & (rec["kind"] == "perennial stream")]
-    oth = rec[(rec["src"] == "fl") & (rec["kind"] != "perennial stream")]
-    if len(wbod):
-        wbod.plot(ax=ax, facecolor="#9ECAE1", edgecolor="#0072B2",
-                  linewidth=0.4, alpha=0.75, zorder=4, rasterized=True)
-    if len(oth):
-        oth.plot(ax=ax, color="#56B4E9", linewidth=0.55,
-                 linestyle=(0, (4, 2)), zorder=5, rasterized=True)
-    if len(per):
-        per.plot(ax=ax, color="#0072B2", linewidth=1.0, zorder=5,
-                 rasterized=True)
+        alpha=0.85, zorder=3.5, rasterized=True))
 
     box = sites.cx[win[0]:win[2], win[1]:win[3]]
     clear = box[box["dist_m"].isna()]
@@ -142,9 +167,10 @@ for i, (label, win) in enumerate(panels):
     ax.scatter([p.x for p in near["rep"]], [p.y for p in near["rep"]], s=16,
                marker="o", facecolors="none", edgecolors="#5D5D5D",
                linewidths=0.7, zorder=9)
-    ax.scatter([p.x for p in ex["rep"]], [p.y for p in ex["rep"]], s=34,
-               c=ex["P_annual_site"], vmin=0, vmax=vmax, marker="o",
-               edgecolors="white", linewidths=0.5, zorder=10)
+    sitesc = ax.scatter([p.x for p in ex["rep"]], [p.y for p in ex["rep"]],
+                        s=34, c=ex["P_annual_site"], vmin=0, vmax=vmax,
+                        marker="o", edgecolors="white", linewidths=0.5,
+                        zorder=10)
     places = ctx["places"].clip(tuple(win))
     if len(places):
         ax.scatter(places.geometry.x, places.geometry.y, s=11, color="black",
@@ -157,7 +183,7 @@ for i, (label, win) in enumerate(panels):
         # panel's frame.
         ax.yaxis.tick_right()
     ax.set_title(f"{label} — {int(ex['on_blm'].sum())} of {len(ex)} "
-                 f"exposed sites on BLM land", fontsize=10)
+                 f"near-channel sites on BLM land", fontsize=10)
     fig.canvas.draw()          # transforms must be final before labels land
 
     # Labels: towns, then the waters they sit on, then the ranked sites, all
@@ -187,31 +213,44 @@ for i, (label, win) in enumerate(panels):
     if dropped:
         print(f"  {dropped} site labels had nowhere to go", flush=True)
 
-cax = fig.add_axes([0.5 - 0.13, (BOTM - 0.42) / FH, 0.26, 0.012])
-cb = fig.colorbar(net, cax=cax, orientation="horizontal")
-cb.set_label("segment debris-flow likelihood (I15 = 24 mm/h)", fontsize=8,
+# Two scales, because the sheet carries two different quantities: the colour
+# of a channel and the colour of a site are not the same measurement, and one
+# shared bar invited them to be read as one.
+cby = (BOTM - 0.42) / FH
+cb = fig.colorbar(net, cax=fig.add_axes([0.24, cby, 0.22, 0.012]),
+                  orientation="horizontal")
+cb.set_label("channel debris-flow likelihood (I15 = 24 mm/h)", fontsize=7.5,
              labelpad=2)
 cb.ax.tick_params(labelsize=7, pad=1.5)
+cb2 = fig.colorbar(sitesc, cax=fig.add_axes([0.54, cby, 0.22, 0.012]),
+                   orientation="horizontal")
+cb2.set_label("site annual hit probability  P(F) × P(R>T) × P(DF)",
+              fontsize=7.5, labelpad=2)
+cb2.ax.tick_params(labelsize=7, pad=1.5)
+
 fig.legend(handles=[
-    Line2D([0], [0], color="#0072B2", lw=1.0, label="perennial stream (NHD)"),
+    Line2D([0], [0], color="#0072B2", lw=1.2, label="perennial stream (NHD)"),
     Line2D([0], [0], color="#56B4E9", lw=0.55, linestyle=(0, (4, 2)),
            label="named intermittent / canal"),
     Patch(facecolor="#9ECAE1", edgecolor="#0072B2", label="named waterbody"),
     Line2D([0], [0], marker="o", color="none", markerfacecolor="#3B528B",
            markeredgecolor="white", markersize=7,
-           label="waste site in a delivery corridor"),
+           label="waste site within 30–55 m of a channel"),
     Line2D([0], [0], marker="o", color="none", markerfacecolor="none",
            markeredgecolor="#5D5D5D", markersize=6,
-           label="within 1 km of one"),
+           label="within 1 km of a channel"),
     Patch(facecolor="#D9C98C", alpha=0.5, label="BLM-managed land"),
 ], loc="lower center", bbox_to_anchor=(0.5, 0.022), ncol=6, fontsize=8,
     frameon=False)
-fig.suptitle("Where the top-ranked AML sites meet the water: hazard network, "
-             "delivery corridors, and named receptors", fontsize=12, y=0.975)
+fig.suptitle("Abandoned-mine waste on the debris-flow network: modelled "
+             "channels, the named streams they drain into, and the ranked "
+             "sites", fontsize=12, y=0.975)
 fig.text(0.5, 0.006,
-         "Site color = annual hit probability; numbers are the statewide "
-         "exposure rank. Delivery is a proximity proxy (corridor width "
-         "9–60 m from contributing area), not a runout model.",
+         "A site counts as near-channel when it lies within 30–55 m of a "
+         "modelled channel — half a corridor 9–60 m wide that widens with "
+         "contributing area, plus 25 m for registration. That is proximity to "
+         "the network, not a runout model: it counts a dump on a terrace "
+         "beside the channel and misses one on a distal fan.",
          ha="center", fontsize=6.5, color="#444444")
 mc.save(fig, "aml_districts_v2")
 print("saved figures/aml_districts_v2.pdf")
