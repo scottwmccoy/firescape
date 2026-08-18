@@ -35,7 +35,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.colors import LogNorm
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
+from matplotlib.patches import FancyBboxPatch, Patch
 from matplotlib.ticker import FixedLocator, FuncFormatter
 from scipy.cluster.hierarchy import fcluster, linkage
 from stormscape.plot import Labeller
@@ -80,7 +80,7 @@ print(f"near-channel: {int((waste['exposed']).sum()):,} waste, "
 # printed straight through the degree labels and the legend box.
 FW, FH = 9.6, 12.4
 fig = plt.figure(figsize=(FW, FH), dpi=150)
-ax = fig.add_axes([0.055, 0.088, 0.80, 0.855])
+ax = fig.add_axes([0.055, 0.088, 0.925, 0.855])
 ax.imshow(hs, cmap="gray", vmin=0, vmax=1, extent=extent)
 blm.plot(ax=ax, facecolor="#D9C98C", edgecolor="none", alpha=0.26, zorder=1,
          rasterized=True)
@@ -101,16 +101,26 @@ for kind, marker, size in (("working", "^", 8), ("waste", "o", 30)):
                     edgecolors="white" if kind == "working" else "#111111",
                     linewidths=0.25 if kind == "working" else 0.45,
                     zorder=9 + size / 100, rasterized=True)
-cb = fig.colorbar(sc, cax=fig.add_axes([0.884, 0.435, 0.013, 0.235]),
-                  extend="both")
-cb.set_label("chance a flow reaches the site\nreturn interval (years)",
-             fontsize=7.5, labelpad=3)
+# On the map beside the legend rather than in the margin: at statewide
+# extent the western third of the frame is California and empty, and a bar
+# out in the margin costs the panel width that the ranges need. Carried on
+# its own white card so the labels stay legible over the terrain.
+ax.add_patch(FancyBboxPatch(
+    (0.400, 0.018), 0.262, 0.070, boxstyle="round,pad=0.006",
+    transform=ax.transAxes, facecolor="white", edgecolor="#666666",
+    linewidth=0.5, alpha=0.87, zorder=12.5, mutation_aspect=0.35))
+cax = ax.inset_axes([0.418, 0.063, 0.226, 0.011])
+cax.set_zorder(13)
+cb = fig.colorbar(sc, cax=cax, orientation="horizontal", extend="both")
+# Short enough to stay on its own card: a longer label is centred on the
+# bar, overruns the card at both ends and slides under the legend box.
+cb.set_label("return interval (years)", fontsize=6.6, labelpad=2)
 ticks = [t for t in (1/30, 1/100, 1/300, 1/1000, 1/3000) if vmin <= t <= vmax]
-cb.ax.yaxis.set_major_locator(FixedLocator(ticks))
-cb.ax.yaxis.set_minor_locator(FixedLocator([]))
-cb.ax.yaxis.set_major_formatter(FuncFormatter(
+cb.ax.xaxis.set_major_locator(FixedLocator(ticks))
+cb.ax.xaxis.set_minor_locator(FixedLocator([]))
+cb.ax.xaxis.set_major_formatter(FuncFormatter(
     lambda x, _: f"{round(1/x, -1):,.0f}" if x > 0 else ""))
-cb.ax.tick_params(labelsize=6.8, pad=1.5)
+cb.ax.tick_params(labelsize=6.2, pad=1.2)
 
 # One entry per district: the plain top twelve were all the same Elko
 # cluster, which made a starburst of leaders in one corner and told a
