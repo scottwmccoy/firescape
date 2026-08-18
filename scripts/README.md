@@ -180,6 +180,7 @@ dtype=np.float16)`) — the Dolan grid is ~36M px × 30 frames.
 |---|---|
 |  `p5_inventory_pack.py` | builds the manual-survey package: 4.24 M-segment GPKG, regionated KMZ tiles by HU8, hot-segment layer, priority sheet |
 | `p2_hindcast_batch.py`, `p2_hindcast_fig.py` | observed-severity hindcasts for historic fires (M6 validation). The batch script invokes the figure script **by path** — keep them in the same directory |
+| `e5_perry_canyon.py` | Perry Canyon pilot: adits + shafts as portal-dump proxies where USMIN maps no waste extent (dedupes overlapping quad records) → `products/exposure/perry_canyon_v1/`; sheet = `figures/e6_perry_canyon.py` |
 | `e2_aml_exposure.py` | AML waste sites vs the v1.2 network (`firescape.exposure`: near-channel test → site annual rates → named NHD receptor → BLM flag) → ranked `products/exposure/aml_v2/`. Maps: `figures/e3_aml_map.py` (statewide) then `figures/e4_aml_zooms.py` (six district zooms, windows clustered from the ranking — same statewide-then-zoom pattern as `sw_maps_v12` → `p10`/`p12`) |
 
 ### Active-fire pipeline (`p8_*`, `p9_*`)
