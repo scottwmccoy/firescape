@@ -394,6 +394,65 @@ def style_axes(ax, extent, *, step: float = 1.0):
     ax.tick_params(length=2.5)
 
 
+def panel_span(fig):
+    """``(x0, x1)`` in inches of the figure's map panels.
+
+    Colourbars are axes too, so the span is taken over axes whose area is
+    within a quarter of the largest — which keeps the panels and drops the
+    thin bars beside or beneath them.
+    """
+    boxes = [ax.get_position() for ax in fig.axes]
+    fig_w = fig.get_size_inches()[0]
+    if not boxes:
+        return 0.0, fig_w
+    areas = [b.width * b.height for b in boxes]
+    keep = [b for b, a in zip(boxes, areas) if a >= 0.25 * max(areas)]
+    return min(b.x0 for b in keep) * fig_w, max(b.x1 for b in keep) * fig_w
+
+
+def wrap_text(fig, text: str, width_in: float, *, fontsize: float) -> str:
+    """Wrap ``text`` to ``width_in`` inches, measured rather than guessed.
+
+    A character count guessed from the string length is wrong by a factor of
+    two between "MMM" and "iii", so the width of one character is measured
+    off a throwaway artist at the size the text will actually be drawn.
+    """
+    import textwrap
+
+    probe = fig.text(0, 0, text, fontsize=fontsize)
+    fig.canvas.draw()
+    per_char = (probe.get_window_extent()
+                .transformed(fig.dpi_scale_trans.inverted()).width
+                / max(len(text), 1))
+    probe.remove()
+    ncols = max(20, int(width_in / max(per_char, 1e-6)))
+    return "\n".join(textwrap.wrap(text, ncols) or [""])
+
+
+def footnote(fig, text: str, *, fontsize: float = 6.5, color: str = "#444444",
+             pad_in: float = 0.06, width_in: float = None, ha: str = "center"):
+    """A bottom note wrapped to the **panels**, not to the canvas.
+
+    Left to itself a caption runs the full width of the figure and then some:
+    ``bbox_inches="tight"`` grows the saved canvas to whatever the widest
+    artist needs, so an over-long note silently widens the sheet and leaves
+    the map floating in the middle of a line of small print. Bounding it to
+    the panel span keeps the block of text reading as part of the figure.
+
+    Call **after** the layout is final (after ``tight_layout``, if used) —
+    the span is measured from where the axes actually are.
+    """
+    fig.canvas.draw()
+    x0, x1 = panel_span(fig)
+    fig_w, fig_h = fig.get_size_inches()
+    width_in = (x1 - x0) if width_in is None else width_in
+    x = {"center": (x0 + x1) / 2, "left": x0, "right": x1}[ha] / fig_w
+    return fig.text(x, pad_in / fig_h,
+                    wrap_text(fig, text, width_in, fontsize=fontsize),
+                    ha=ha, va="bottom", fontsize=fontsize, color=color,
+                    linespacing=1.35)
+
+
 def save(fig, stem: str, *, dpi: int = 300, formats=("pdf",)):
     """Write a figure to ``figures/`` in each format. Returns the paths.
 

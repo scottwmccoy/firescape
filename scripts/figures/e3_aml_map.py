@@ -1,9 +1,9 @@
-"""Statewide AML waste exposure map -> figures/aml_exposure_v1.pdf.
+"""Statewide AML waste exposure map -> figures/aml_exposure_v2.pdf.
 
 One panel: every USMIN waste site over the house hillshade+context frame,
-status by marker (dot = clear, open circle = near-corridor, filled = in a
-delivery corridor) with the exposed sites colored by their annual PFDF hit
-rate; the top ten ranked sites numbered, with a side table.
+status by marker (dot = clear, open circle = within 1 km of a channel, filled
+= within 30-55 m of one) with the near-channel sites coloured by their annual
+hit rate; the top ten ranked sites numbered, with a side table.
 """
 import warnings
 
@@ -77,10 +77,10 @@ ax.text(0.985, 0.015,
 ax.legend(handles=[
     Line2D([0], [0], marker="o", color="none", markerfacecolor="#3B528B",
            markeredgecolor="white", markersize=7,
-           label=f"in a delivery corridor ({len(exp)})"),
+           label=f"within 30–55 m of a channel ({len(exp)})"),
     Line2D([0], [0], marker="o", color="none", markerfacecolor="none",
            markeredgecolor="#5D5D5D", markersize=6,
-           label=f"within 1 km of one ({len(near)})"),
+           label=f"within 1 km of a channel ({len(near)})"),
     Line2D([0], [0], marker=".", color="none", markerfacecolor="#888888",
            markeredgecolor="none", markersize=6,
            label=f"clear (> 1 km) ({len(clear)})"),
@@ -93,14 +93,14 @@ mc.style_axes(ax, extent)
 ax.set_title("Abandoned-mine waste in post-fire debris-flow corridors\n"
              "statewide exposure ranking on the v1.2 pre-fire hazard surface",
              fontsize=11)
-fig.text(0.01, 0.005,
-         "Delivery = site touches a segment corridor (width 9-60 m from "
-         "contributing area, +25 m pad): a proximity proxy, not a runout "
-         "model. Assets: USMIN topo-sheet symbols (historical, not the "
-         "operational AML inventory). Annual rate at the delivering "
-         "segment's threshold through the basin rain climatology.",
-         fontsize=6, color="#444444")
 fig.tight_layout()
+mc.footnote(fig,
+    "A site counts as near-channel when it lies within 30–55 m of a modelled "
+    "channel — half a corridor 9–60 m wide that widens with contributing "
+    "area, plus 25 m for registration. Proximity to the network, not a runout "
+    "model. Assets are USMIN topo-sheet symbols (historical, not the "
+    "operational AML inventory); the annual rate takes the delivering "
+    "segment's threshold through the basin rain climatology.")
 
 # Numbering last, against the final layout: several of the top ten sit in the
 # Comstock cluster, where a fixed offset stacked them on one another.

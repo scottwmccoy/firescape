@@ -279,3 +279,53 @@ def test_save_still_writes_png_on_request(tmp_path, monkeypatch):
 def test_layer_alpha_ceiling_is_documented():
     """Terrain must read through every data layer."""
     assert plotting.MAX_LAYER_ALPHA <= 0.6
+
+
+# --- bottom notes ----------------------------------------------------------
+
+def test_wrap_text_respects_the_measured_width():
+    """A caption bounded to the panels must not exceed them; the wrap is
+    measured, because a character count is wrong by 2x between 'MMM' and
+    'iii'."""
+    fig, ax = plt.subplots(figsize=(7, 5), dpi=100)
+    fig.canvas.draw()
+    long = ("A site counts as near-channel when it lies within 30-55 m of a "
+            "modelled channel, half a corridor 9-60 m wide that widens with "
+            "contributing area, plus 25 m for registration. ") * 2
+    wrapped = plotting.wrap_text(fig, long, 4.0, fontsize=6.5)
+
+    assert "\n" in wrapped
+    for line in wrapped.split("\n"):
+        probe = fig.text(0, 0, line, fontsize=6.5)
+        fig.canvas.draw()
+        w = (probe.get_window_extent()
+             .transformed(fig.dpi_scale_trans.inverted()).width)
+        probe.remove()
+        assert w <= 4.0 * 1.05        # a whole word may overhang slightly
+    plt.close(fig)
+
+
+def test_panel_span_ignores_the_colourbar():
+    """Colourbars are axes too; a note bounded to 'the figure' must not be
+    stretched by the thin bar beside the map."""
+    fig = plt.figure(figsize=(8, 5), dpi=100)
+    fig.add_axes([0.10, 0.20, 0.60, 0.70])          # the panel
+    fig.add_axes([0.86, 0.20, 0.02, 0.70])          # a colourbar
+    x0, x1 = plotting.panel_span(fig)
+
+    assert x0 == pytest.approx(0.8, abs=1e-6)       # 0.10 * 8 in
+    assert x1 == pytest.approx(5.6, abs=1e-6)       # 0.70 * 8 in
+    plt.close(fig)
+
+
+def test_footnote_sits_inside_the_panel_span():
+    fig = plt.figure(figsize=(8, 5), dpi=100)
+    fig.add_axes([0.10, 0.20, 0.60, 0.70])
+    t = plotting.footnote(fig, "a caption " * 40)
+    fig.canvas.draw()
+    bb = (t.get_window_extent()
+          .transformed(fig.dpi_scale_trans.inverted()))
+
+    assert bb.x0 >= 0.8 - 0.2 and bb.x1 <= 5.6 + 0.2
+    assert "\n" in t.get_text()
+    plt.close(fig)

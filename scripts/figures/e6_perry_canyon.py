@@ -156,7 +156,7 @@ for _, r in work[work["named"].astype(bool)].sort_values("rank").iterrows():
 if drop:
     print(f"{drop} rank labels had nowhere to go", flush=True)
 
-cby = (BOTM - 0.46) / FH
+cby = (BOTM - 0.40) / FH
 cb = fig.colorbar(net, cax=fig.add_axes([0.10, cby, 0.34, 0.013]),
                   orientation="horizontal")
 cb.set_label("channel debris-flow likelihood (I15 = 24 mm/h)", fontsize=8,
@@ -185,7 +185,7 @@ fig.legend(handles=[
     Line2D([0], [0], color="#56B4E9", lw=0.9, linestyle=(0, (4, 2)),
            label="named intermittent / canal"),
     Patch(facecolor="#D9C98C", alpha=0.5, label="BLM-managed land"),
-], loc="lower center", bbox_to_anchor=(0.5, 0.020), ncol=3, fontsize=8,
+], loc="lower center", bbox_to_anchor=(0.5, 0.048), ncol=3, fontsize=8,
     frameon=False)
 
 meta = json.loads((EXPO / "run_meta.json").read_text())
@@ -202,14 +202,12 @@ fig.text(0.5, 0.929,
          f"{int(work['on_blm'].sum())} of {len(work)} on BLM-managed land · "
          f"most frequent 1 in {1/work['P_annual_site'].max():,.0f} yr",
          ha="center", fontsize=9.5, color="#333333")
-fig.text(0.5, 0.006,
-         "The asset is the opening, not the dump: a portal dump spills "
-         "downslope and USMIN never mapped it, so a pile can reach a channel "
-         "from an opening that does not. Numbers rank annual hit probability, "
-         "which is likelihood and not consequence — the delivering channel's "
-         "size and predicted volume are in the CSV and point elsewhere. Mine "
-         "names are shown where USMIN carries one; they do not predict which "
-         "working holds the larger pile.",
-         ha="center", fontsize=6.5, color="#444444")
+mc.footnote(fig,
+    "The asset is the opening, not the dump: a portal dump spills downslope "
+    "and USMIN never mapped it, so a pile can reach a channel from an opening "
+    "that does not. Numbers rank annual hit probability, which is likelihood "
+    "and not consequence — the delivering channel's size and predicted volume "
+    "are in the CSV and point elsewhere. Mine names are shown where USMIN "
+    "carries one; they do not predict which working holds the larger pile.")
 mc.save(fig, "perry_canyon_openings")
 print("saved figures/perry_canyon_openings.pdf")

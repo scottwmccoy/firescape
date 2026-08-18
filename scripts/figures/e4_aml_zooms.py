@@ -229,7 +229,7 @@ def sheet(c):
                       force_leader=lab.crowded(r["rep"].x, r["rep"].y,
                                                radius_px=CROWD_PX))
 
-    cby = (BOTM - 0.46) / FH
+    cby = (BOTM - 0.40) / FH
     if net is not None:
         cb = fig.colorbar(net, cax=fig.add_axes([0.10, cby, 0.34, 0.013]),
                           orientation="horizontal")
@@ -256,7 +256,7 @@ def sheet(c):
                markeredgecolor="#5D5D5D", markersize=7,
                label="within 1 km of a channel"),
         Patch(facecolor="#D9C98C", alpha=0.5, label="BLM-managed land"),
-    ], loc="lower center", bbox_to_anchor=(0.5, 0.020), ncol=3, fontsize=8,
+    ], loc="lower center", bbox_to_anchor=(0.5, 0.048), ncol=3, fontsize=8,
         frameon=False)
 
     best = c["best"]
@@ -274,13 +274,12 @@ def sheet(c):
              f"{len(ex)} of {len(box)} sites in this window lie within "
              f"30–55 m of a channel, {blm_n} on BLM land",
              ha="center", fontsize=9.5, color="#333333")
-    fig.text(0.5, 0.006,
-             "Numbers are the statewide exposure rank. Proximity to the "
-             "modelled network, not a runout model: it counts a dump on a "
-             "terrace beside the channel and misses one on a distal fan. "
-             "Assets are USMIN topo-sheet symbols — historical, not the "
-             "state's operational AML inventory.",
-             ha="center", fontsize=6.5, color="#444444")
+    mc.footnote(fig,
+        "Numbers are the statewide exposure rank. Proximity to the modelled "
+        "network, not a runout model: it counts a dump on a terrace beside "
+        "the channel and misses one on a distal fan. Assets are USMIN "
+        "topo-sheet symbols — historical, not the state's operational AML "
+        "inventory.")
     mc.save(fig, f"aml_zoom_{c['key']}")
     plt.close(fig)
     return {"key": c["key"], "county": c["county"], "best_rank": c["rank"],
