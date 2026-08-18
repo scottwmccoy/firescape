@@ -22,6 +22,7 @@ Three things to keep straight:
 Writes the observed-severity assessment beside the pre-fire forecast so the
 two can be differenced.
 """
+import datetime as dt
 import json
 import sys
 import warnings
@@ -101,9 +102,18 @@ result = assess.run_observed(
     perimeter=per.to_crs(dem.crs), dnbr=str(dnbr_x1000), barc_breaks=breaks)
 print(f"{result.get('n_segments', 'n/a')} segments -> {OUT}", flush=True)
 
+# Age from the scene itself, not a constant: the first run happened to be a
+# day old and the 1 got frozen into every summary written since, including
+# ones fetched days later. Age is the whole basis for trusting the magnitude.
+_scenes = [dt.date.fromisoformat(str(s)[:10]) for s in meta["scene_dates"]]
+_age = (dt.date.today() - max(_scenes)).days
+
 summary = {"fire": FIRE, "severity_source": "CIMSS BRISK",
            "scene_dates": meta["scene_dates"],
-           "composite_age_days": 1,
+           "composite_age_days": _age,
+           "magnitude_caveat": (
+               "under BRISK's ~14 d maturity mark: pattern reliable, magnitude "
+               "may still rise" if _age < 14 else "past BRISK's ~14 d mark"),
            "class_fraction": meta.get("class_fraction", {}),
            "barc_breaks_x1000": breaks, "region": region,
            "calibration_for_breaks": CAL}

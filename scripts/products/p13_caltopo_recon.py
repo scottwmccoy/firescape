@@ -80,17 +80,18 @@ SIMPLIFY_M = 5.0        # well under a 10 m DEM cell; trims the file, not the li
 
 
 def load(fire):
-    """Segments (observed severity + observed storm), basins, perimeter."""
+    """Segments (observed severity + observed storm), basins, perimeter, severity meta."""
     src = paths.products_dir("forecast", f"{fire}_observed")
     seg = gpd.read_file(src / f"{fire}_storm_response_observed.gpkg")
     basins = gpd.read_file(src / f"{fire.upper()}_basins.gpkg")
     perim = gpd.read_file(src / "_perimeter.geojson")
+    sev = json.loads((src / "observed_severity_summary.json").read_text())
     # Segment_ID rides into the field as a label and in the description; as a
     # float it reads "6637.0", which is not a key anyone wants to type.
     for g in (seg, basins):
         if "Segment_ID" in g.columns:
             g["Segment_ID"] = g["Segment_ID"].astype("Int64")
-    return seg, basins, perim
+    return seg, basins, perim, sev
 
 
 def basins_in_perimeter(basins, perim):
@@ -151,7 +152,7 @@ def main():
     report, all_layers = {}, []
 
     for fire in FIRES:
-        seg, basins, perim = load(fire)
+        seg, basins, perim, sev = load(fire)
         bas = basins_in_perimeter(basins, perim)
         p = seg["P_observed"].to_numpy(float)
         print(f"{fire}: {len(seg):,} segments, {len(bas):,} of "
@@ -168,6 +169,8 @@ def main():
         report[fire] = {"segments": int(len(seg)),
                         "basins": int(len(bas)),
                         "basins_modelled": int(len(basins)),
+                        "severity_scenes": sev["scene_dates"],
+                        "composite_age_days": sev["composite_age_days"],
                         "P_observed_median": round(float(np.nanmedian(p)), 4),
                         "segments_P_ge_0.5": int(np.nansum(p >= 0.5)),
                         "geojson_mb": round(s["bytes"] / 1e6, 2),
@@ -227,11 +230,16 @@ def main():
 
 
 def write_readme(report, rasters):
+    ages = {r["composite_age_days"] for r in report.values()}
+    scenes = ", ".join(sorted({s for r in report.values()
+                               for s in r["severity_scenes"]}))
+    age = min(ages) if len(ages) == 1 else f"{min(ages)}-{max(ages)}"
     lines = [
         "# Bug + Stallion reconnaissance package (CalTopo)",
         "",
-        f"Storm window **{STORM_WINDOW}**; observed burn severity (BRISK dNBR) "
-        "and observed rainfall (MRMS peak 15-minute intensity, 1 km).",
+        f"Storm window **{STORM_WINDOW}**; observed burn severity (CIMSS BRISK "
+        f"dNBR, scene **{scenes}**) and observed rainfall (MRMS peak "
+        "15-minute intensity, 1 km).",
         "",
         "## Import into CalTopo",
         "",
@@ -293,12 +301,19 @@ def write_readme(report, rasters):
         "",
         "## Caveats to carry",
         "",
-        "- **The severity is BRISK, not BARC.** Both fires use a CIMSS BRISK "
-        "near-real-time composite from a single **14 Aug 2026** scene — the "
-        "last day of the storm window. It measures vegetation change, not soil "
-        "burn severity, and it postdates most of the rain, so it describes the "
-        "ground roughly as the storm ended rather than before it. Rerun this "
-        "when the BARC/MTBS product releases.",
+        f"- **The severity is BRISK, not BARC.** Scene {scenes}, "
+        f"**{age} day(s) old**. It measures vegetation change, not soil burn "
+        "severity, which is what the USGS models are calibrated on. Supersede "
+        "it when the BAER/MTBS product releases.",
+        "- **The composite is still maturing, and it moves fast.** BRISK "
+        "sharpens as Landsat/Sentinel-2 overpasses accumulate on top of the "
+        "immediate GOES look; under about 14 days the pattern is reliable but "
+        "the magnitude under-reads. Between the 14 Aug and 17 Aug composites "
+        "the unburned fraction fell from ~0.67 to ~0.44 on both fires, the "
+        "networks grew by a third to a half, and Stallion's count of segments "
+        "at or above 0.5 went 615 → 893. **Re-pull before you leave** — "
+        "`p9_fire_observed.py` then `p9_fire_observed_map.py` then this "
+        "script — and expect the target list to have grown again.",
         "- **MRMS is 1 km.** Convective cores are often smaller than a grid "
         "cell, so peak intensity in a small basin can be higher than shown.",
         "- Likelihood is per segment at the observed storm; it is not a runout "
