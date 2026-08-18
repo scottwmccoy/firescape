@@ -16,10 +16,20 @@ differences from the waste product:
   opening, and a dump can reach the channel from an opening that does not.
   ``dist_m`` is carried for every working, not just the near-channel ones, so
   the margin is visible rather than hidden behind a yes/no.
-* **Named workings are called out.** A named mine on a historical quad was a
-  producer, and production is what makes a waste-rock pile; an unnamed shaft
-  may be a prospect that never moved much rock. The ranking reports both, and
-  the name is the field to sort on when deciding what to visit.
+* **A name is not a proxy for the pile.** The plausible guess — a named mine
+  on a historical quad was a producer, and production is what leaves a
+  waste-rock pile — is wrong here, and Scott's ground knowledge is what
+  falsified it: the largest pile at Perry Canyon is at an *unnamed* adit low
+  in the drainage, while the named Jones Kincaid shaft has little. The
+  ranking never used the name, and it independently put Jones Kincaid 47th of
+  50; the name is carried as an attribute, not as evidence.
+* **Two orderings, because likelihood is not consequence.** ``rank`` sorts by
+  annual hit probability — where a flow is most likely to occur at all. The
+  delivering segment's contributing area and RANGES volume say something
+  different: how big a channel the working sits on and how much material a
+  flow there would move. They disagree strongly (the top-volume workings sit
+  in the 17th-44th places by probability), so both are written out and the
+  field to sort on depends on the question being asked.
 
 USMIN is digitized **per quadrangle**, and three quads overlap here — Sutcliffe
 (1957), Moses Rock (1980) and Fraser Flat (1980) — so the same adit appears two
@@ -100,8 +110,9 @@ for path in units:
         bbox=(bb[0] - PAD, bb[1] - PAD, bb[2] + PAD, bb[3] + PAD))
     if len(segs):
         segs.index = pd.Index([f"{huc}-{i}" for i in segs["Segment_ID"]])
-        frames.append(exposure.hazard_at_assets(work, segs, pad_m=PAD_M,
-                                                near_max_m=NEAR_M))
+        frames.append(exposure.hazard_at_assets(
+            work, segs, pad_m=PAD_M, near_max_m=NEAR_M,
+            cols=("P_24mmh", "V_24mmh", "H_24mmh", "I15_50", "Area_km2")))
         print(f"  unit {huc}: {len(segs):,} segments", flush=True)
 if not frames:
     raise SystemExit("no modelled channels near Perry Canyon")
@@ -143,6 +154,10 @@ best["quads"] = full.groupby("working")["topo_name"].apply(
 ).reindex(best["working"]).to_numpy()
 print(f"collapsed {len(full)} records -> {len(best)} workings")
 out = exposure.rank(best)
+out = out.rename(columns={"Area_km2": "seg_area_km2"})
+# The consequence ordering, kept beside the likelihood one.
+out["volume_rank"] = out["V_24mmh"].rank(ascending=False,
+                                         method="min").astype("Int64")
 
 OUT.mkdir(parents=True, exist_ok=True)
 out.to_file(OUT / "perry_openings.gpkg", layer="workings", driver="GPKG")

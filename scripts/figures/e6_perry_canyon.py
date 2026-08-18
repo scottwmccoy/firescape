@@ -2,9 +2,14 @@
 
 The district the statewide waste ranking cannot see. USMIN maps no dump or
 tailings extent here, so this draws the underground workings instead — adits
-as triangles, shafts as squares — over the modelled debris-flow network, with
-the named mines labelled by name rather than by rank because those are the
-ones Scott confirms carry real waste-rock piles.
+as triangles, shafts as squares — over the modelled debris-flow network.
+
+Workings are labelled by **rank, not by name**. The obvious guess was that the
+named mines carry the waste-rock piles; Scott's ground knowledge falsified it
+(the largest pile is at an unnamed adit low in the drainage, and the named
+Jones Kincaid shaft has little), so privileging names on the sheet would draw
+the eye to the wrong workings. Names are still drawn where they exist, in
+grey, as an attribute rather than as evidence.
 
 Same grammar as the district zooms (``e4_aml_zooms``): named water first, the
 modelled channels over it, BLM shaded, labels placed against a collision list.
@@ -38,6 +43,7 @@ EXPO = paths.products_dir("exposure", "perry_canyon_v1")
 AXIS = LineString([(-119.60927, 39.86253), (-119.56104, 39.82705)])
 P_FLOOR, P_CEIL = 0.05, 0.40
 NPX, MIN_M_PER_PX = 1900, 8.0
+NLABEL = 15
 MARK = {"Adit": "^", "Mine Shaft": "s"}
 
 work = gpd.read_file(EXPO / "perry_openings.gpkg", layer="workings").to_crs(4326)
@@ -138,13 +144,17 @@ lab.label(AXIS.interpolate(0.5, normalized=True).x,
           fontsize=9, color="#222222", style="italic", weight="bold",
           zorder=11)
 drop = 0
-for _, r in work[work["named"].astype(bool)].sort_values("rank").iterrows():
-    if not lab.label(r.geometry.x, r.geometry.y, shorten(str(r["name"]), 22),
-                     fontsize=8.5, color="#C1272D", weight="bold", zorder=12,
-                     force_leader=True):
+for _, r in work.sort_values("rank").head(NLABEL).iterrows():
+    if not lab.label(r.geometry.x, r.geometry.y, f"{int(r['rank'])}",
+                     fontsize=9, color="#C1272D", weight="bold", zorder=12,
+                     force_leader=lab.crowded(r.geometry.x, r.geometry.y,
+                                              radius_px=26)):
         drop += 1
+for _, r in work[work["named"].astype(bool)].sort_values("rank").iterrows():
+    lab.label(r.geometry.x, r.geometry.y, shorten(str(r["name"]), 22),
+              fontsize=7, color="#555555", style="italic", zorder=11.5)
 if drop:
-    print(f"{drop} mine labels had nowhere to go", flush=True)
+    print(f"{drop} rank labels had nowhere to go", flush=True)
 
 cby = (BOTM - 0.46) / FH
 cb = fig.colorbar(net, cax=fig.add_axes([0.10, cby, 0.34, 0.013]),
@@ -195,9 +205,11 @@ fig.text(0.5, 0.929,
 fig.text(0.5, 0.006,
          "The asset is the opening, not the dump: a portal dump spills "
          "downslope and USMIN never mapped it, so a pile can reach a channel "
-         "from an opening that does not. Named mines are labelled because a "
-         "producer is what leaves a waste-rock pile. Proximity to the "
-         "modelled network, not a runout model.",
+         "from an opening that does not. Numbers rank annual hit probability, "
+         "which is likelihood and not consequence — the delivering channel's "
+         "size and predicted volume are in the CSV and point elsewhere. Mine "
+         "names are shown where USMIN carries one; they do not predict which "
+         "working holds the larger pile.",
          ha="center", fontsize=6.5, color="#444444")
 mc.save(fig, "perry_canyon_openings")
 print("saved figures/perry_canyon_openings.pdf")
