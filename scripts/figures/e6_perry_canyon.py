@@ -4,12 +4,12 @@ The district the statewide waste ranking cannot see. USMIN maps no dump or
 tailings extent here, so this draws the underground workings instead — adits
 as triangles, shafts as squares — over the modelled debris-flow network.
 
-Workings are labelled by **rank, not by name**. The obvious guess was that the
-named mines carry the waste-rock piles; Scott's ground knowledge falsified it
-(the largest pile is at an unnamed adit low in the drainage, and the named
-Jones Kincaid shaft has little), so privileging names on the sheet would draw
-the eye to the wrong workings. Names are still drawn where they exist, in
-grey, as an attribute rather than as evidence.
+Workings are labelled by **rank, not by name**. Two guesses at which working
+holds the big pile both died against Scott's ground truth (it is rank 7): the
+named mines are not the producers here, and neither is the working lowest in
+the drainage. Pile size follows production history, which USMIN does not
+record — so the sheet orders exposure and says nothing about source size, and
+names are drawn in grey as an attribute rather than as evidence.
 
 Same grammar as the district zooms (``e4_aml_zooms``): named water first, the
 modelled channels over it, BLM shaded, labels placed against a collision list.

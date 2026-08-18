@@ -16,20 +16,25 @@ differences from the waste product:
   opening, and a dump can reach the channel from an opening that does not.
   ``dist_m`` is carried for every working, not just the near-channel ones, so
   the margin is visible rather than hidden behind a yes/no.
-* **A name is not a proxy for the pile.** The plausible guess — a named mine
-  on a historical quad was a producer, and production is what leaves a
-  waste-rock pile — is wrong here, and Scott's ground knowledge is what
-  falsified it: the largest pile at Perry Canyon is at an *unnamed* adit low
-  in the drainage, while the named Jones Kincaid shaft has little. The
-  ranking never used the name, and it independently put Jones Kincaid 47th of
-  50; the name is carried as an attribute, not as evidence.
+* **Nothing here predicts the size of the pile, and two guesses died proving
+  it.** Scott's ground truth is that the largest waste-rock pile in the
+  district is at rank 7 — an unnamed in-channel adit at (-119.60253,
+  39.85373). The first guess was that named mines were the producers: wrong,
+  and the ranking had already put the named Jones Kincaid shaft 47th of 50.
+  The second was that the pile would sit low in the drainage on a big
+  channel: also wrong — rank 7 is 31st of 50 by contributing area (0.11 km²,
+  against 1.46 km² for the most-downstream adit) and 23rd by predicted
+  volume. Pile size is a function of production history, which USMIN does not
+  record in any form. This product can therefore order **exposure**, and
+  cannot order **source size**; nothing in it should be read as the latter.
 * **Two orderings, because likelihood is not consequence.** ``rank`` sorts by
   annual hit probability — where a flow is most likely to occur at all. The
   delivering segment's contributing area and RANGES volume say something
   different: how big a channel the working sits on and how much material a
   flow there would move. They disagree strongly (the top-volume workings sit
   in the 17th-44th places by probability), so both are written out and the
-  field to sort on depends on the question being asked.
+  field to sort on depends on the question being asked. Neither is a stand-in
+  for how much waste rock is actually sitting at the portal.
 
 USMIN is digitized **per quadrangle**, and three quads overlap here — Sutcliffe
 (1957), Moses Rock (1980) and Fraser Flat (1980) — so the same adit appears two
