@@ -94,6 +94,53 @@ def load(fire):
     return seg, basins, perim, sev
 
 
+def severity_rasters(fire, sev, out_dir):
+    """The BRISK composite as CalTopo layers: raw dNBR + classed severity.
+
+    No reprojection: BRISK ships on a 60 m EPSG:3857 lattice already, which is
+    exactly what CalTopo wants, so warping it would only lose fidelity.
+
+    The classing uses **this run's own calibrated breaks** rather than a
+    generic scheme, so a hillside that reads "moderate" on the map is moderate
+    to the model that predicted it. Unburned goes transparent, on the same
+    logic as the dry cells on the rainfall layers: inside the perimeter it
+    means nothing happened here, and the terrain underneath is more useful
+    than flat paint. Colours are the four official BAER/BRISK classes, so the
+    layer reads like a BAER map.
+    """
+    import rasterio
+    from stormscape.burn import BAER_CLASS_COLORS
+
+    src = paths.products_dir("forecast", f"{fire}_observed") / \
+        f"{fire}_brisk_dnbr.tif"
+    with rasterio.open(src) as ds:
+        dnbr = ds.read(1).astype("float64")
+        prof, tr, crs = ds.profile, ds.transform, ds.crs
+    if crs.to_epsg() != 3857:                    # BRISK has always been 3857
+        raise RuntimeError(f"{src.name} is {crs}, not EPSG:3857 — reproject "
+                           "before writing a CalTopo layer")
+
+    breaks = [b / 1000.0 for b in sev["barc_breaks_x1000"]]
+    cls = np.digitize(dnbr, breaks)              # 0 unburned .. 3 high
+    rgba = np.zeros(dnbr.shape + (4,), dtype=np.uint8)
+    for i, rgb in enumerate(BAER_CLASS_COLORS):
+        m = np.isfinite(dnbr) & (cls == i)
+        rgba[m, :3] = rgb
+        rgba[m, 3] = 0 if i == 0 else 255        # unburned shows the basemap
+    out = []
+    raw = out_dir / f"{fire}_brisk_dnbr_3857.tif"
+    prof.update(dtype="float32", nodata=np.nan, compress="deflate")
+    with rasterio.open(raw, "w", **prof) as ds:
+        ds.write(dnbr.astype("float32"), 1)
+    out.append(raw)
+    out.append(Path(export.write_rgba(
+        str(out_dir / f"{fire}_brisk_severity_3857_rgb.tif"), rgba, tr, crs)))
+    painted = float((rgba[..., 3] > 0).mean())
+    print(f"  {fire}: severity classed at {breaks} dNBR, "
+          f"{100 * painted:.0f}% of the frame painted", flush=True)
+    return out
+
+
 def basins_in_perimeter(basins, perim):
     """Modelled catchments touching the burn.
 
@@ -149,10 +196,11 @@ def layers_for(fire, seg, basins, perim):
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    report, all_layers = {}, []
+    report, all_layers, sev_meta = {}, [], {}
 
     for fire in FIRES:
         seg, basins, perim, sev = load(fire)
+        sev_meta[fire] = sev
         bas = basins_in_perimeter(basins, perim)
         p = seg["P_observed"].to_numpy(float)
         print(f"{fire}: {len(seg):,} segments, {len(bas):,} of "
@@ -171,6 +219,7 @@ def main():
                         "basins_modelled": int(len(basins)),
                         "severity_scenes": sev["scene_dates"],
                         "composite_age_days": sev["composite_age_days"],
+                        "barc_breaks_x1000": sev["barc_breaks_x1000"],
                         "P_observed_median": round(float(np.nanmedian(p)), 4),
                         "segments_P_ge_0.5": int(np.nansum(p >= 0.5)),
                         "geojson_mb": round(s["bytes"] / 1e6, 2),
@@ -194,6 +243,11 @@ def main():
     tifs = export.export_geotiffs(str(STORM), STORM_KEY, str(OUT),
                                   fields=("i15max", "anom_i15"),
                                   out_key="storm_20260812-14")
+    rdir = Path(tifs[0]).parent if tifs else OUT / "rasters"
+    rdir.mkdir(parents=True, exist_ok=True)
+    print("writing BRISK severity layers (already EPSG:3857)...", flush=True)
+    for fire in FIRES:
+        tifs += [str(p) for p in severity_rasters(fire, sev_meta[fire], rdir)]
     raster_report = {}
     for t in sorted(tifs):
         mb = Path(t).stat().st_size / 1e6
@@ -234,6 +288,8 @@ def write_readme(report, rasters):
     scenes = ", ".join(sorted({s for r in report.values()
                                for s in r["severity_scenes"]}))
     age = min(ages) if len(ages) == 1 else f"{min(ages)}-{max(ages)}"
+    sev_breaks = sorted({b / 1000.0 for r in report.values()
+                         for b in r["barc_breaks_x1000"]})
     lines = [
         "# Bug + Stallion reconnaissance package (CalTopo)",
         "",
@@ -254,8 +310,21 @@ def write_readme(report, rasters):
         "any other projection asks to be aligned by hand.",
         "",
         "Use the `_rgb.tif` files on the map: they are the styled image with "
-        "dry cells transparent. The plain `_3857.tif` files are raw float, for "
-        "analysis rather than display.",
+        "the cells that carry no signal left transparent. The plain "
+        "`_3857.tif` files are raw float, for analysis rather than display.",
+        "",
+        "| Raster | What it shows |",
+        "|---|---|",
+        "| `*_brisk_severity_3857_rgb.tif` | **Burn severity**, the four "
+        "official BAER/BRISK classes (teal unburned → cyan low → yellow "
+        "moderate → dark red high), classed at this run's own calibrated "
+        f"breaks ({', '.join(f'{b:.3f}' for b in sev_breaks)} dNBR) so the "
+        "colours match what drove the prediction. Unburned is transparent. "
+        "**60 m** — the sharpest layer in the package. |",
+        "| `*_i15max_3857_rgb.tif` | Peak 15-minute rainfall intensity over "
+        "the storm. 1 km MRMS, so it is blocky by nature. |",
+        "| `*_anom_i15_3857_rgb.tif` | That intensity against the Atlas-14 "
+        "climatology — how unusual the rain was, not how hard. |",
         "",
         "## Layers",
         "",
