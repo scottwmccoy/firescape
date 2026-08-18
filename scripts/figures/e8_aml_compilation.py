@@ -65,8 +65,12 @@ ctx = mc.fetch_context()
 
 near = both[both["exposed"]]
 far = both[~both["exposed"]]
-p = near["P_annual_site"].dropna()
-vmin, vmax = float(np.nanpercentile(p, 2)), float(np.nanpercentile(p, 99.5))
+# Fixed bounds, not percentiles, and the same ones the district zooms use so
+# a colour means the same thing when flipping between the sheets. The 2nd
+# percentile is 1 in 1.8 million years: it put 4.4 decades on the bar, left
+# the whole lower half without a tick, and spent most of the ramp on rates
+# nobody would act on. Everything outside is flagged by the extend arrows.
+vmin, vmax = 1 / 3000, 1 / 25
 norm = LogNorm(vmin=vmin, vmax=vmax)
 print(f"near-channel: {int((waste['exposed']).sum()):,} waste, "
       f"{int((work['exposed']).sum()):,} workings", flush=True)
@@ -97,16 +101,16 @@ for kind, marker, size in (("working", "^", 8), ("waste", "o", 30)):
                     edgecolors="white" if kind == "working" else "#111111",
                     linewidths=0.25 if kind == "working" else 0.45,
                     zorder=9 + size / 100, rasterized=True)
-cb = fig.colorbar(sc, cax=fig.add_axes([0.875, 0.40, 0.016, 0.30]),
+cb = fig.colorbar(sc, cax=fig.add_axes([0.884, 0.435, 0.013, 0.235]),
                   extend="both")
-cb.set_label("annual chance a debris flow reaches the site\n"
-             "P(F) × P(R>T) × P(DF), as a return interval", fontsize=8)
+cb.set_label("chance a flow reaches the site\nreturn interval (years)",
+             fontsize=7.5, labelpad=3)
 ticks = [t for t in (1/30, 1/100, 1/300, 1/1000, 1/3000) if vmin <= t <= vmax]
 cb.ax.yaxis.set_major_locator(FixedLocator(ticks))
 cb.ax.yaxis.set_minor_locator(FixedLocator([]))
 cb.ax.yaxis.set_major_formatter(FuncFormatter(
-    lambda x, _: f"1 in {round(1/x, -1):,.0f} yr" if x > 0 else ""))
-cb.ax.tick_params(labelsize=7)
+    lambda x, _: f"{round(1/x, -1):,.0f}" if x > 0 else ""))
+cb.ax.tick_params(labelsize=6.8, pad=1.5)
 
 # One entry per district: the plain top twelve were all the same Elko
 # cluster, which made a starburst of leaders in one corner and told a
@@ -130,9 +134,11 @@ for i, r in top.iterrows():
     rows.append(f"{i+1:>2} {'W' if r['kind']=='waste' else 'A'} {nm:<20} "
                 f"{county:<9} 1 in {1/r['P_annual_site']:>5,.0f} yr "
                 f"{'BLM' if r['on_blm'] else '   '}")
-ax.text(0.985, 0.015, "highest-ranked district, one entry each\n"
+# Over California, above the legend: on the right it sat on the Nevada
+# ranges it is a list of.
+ax.text(0.012, 0.135, "highest-ranked district, one entry each\n"
         "(W = mapped waste, A = adit/shaft)\n" + "\n".join(rows),
-        transform=ax.transAxes, ha="right", va="bottom", fontsize=6.4,
+        transform=ax.transAxes, ha="left", va="bottom", fontsize=6.2,
         family="monospace",
         bbox=dict(facecolor="white", alpha=0.87, edgecolor="#666666",
                   linewidth=0.5, boxstyle="round,pad=0.4"), zorder=13)
