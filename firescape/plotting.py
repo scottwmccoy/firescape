@@ -9,7 +9,7 @@ below were made against printed output and are deliberate:
   projection error to anyone who knows the state. Figures are built on a plain
   EPSG:4326 grid with degree-labelled ticks and a ``1/cos(lat)`` aspect, so the
   borders stand vertical. Shading still happens on a metric grid inside
-  :mod:`firescape.relief`, so illumination stays geometrically true.
+  :mod:`stormscape.relief`, so illumination stays geometrically true.
 * **Data layers at alpha <= 0.6.** Terrain context is how a reader judges
   whether a hazard pattern is plausible -- range fronts, canyon mouths, fan
   apexes. Earlier figures used 0.8 and buried the relief.
@@ -119,7 +119,7 @@ def grid_res_m(transform, shape) -> float:
 def shade_resolution(transform, shape) -> float:
     """Metric resolution to shade a display grid at.
 
-    :mod:`firescape.relief` rule 3 is *shade finer than the display grid, then
+    :mod:`stormscape.relief` rule 3 is *shade finer than the display grid, then
     average down* — landforms smaller than a display pixel are what give a
     hillshade its texture. :data:`relief.SHADE_RES_M` is a single statewide
     constant, so a zoomed panel used to be shaded **coarser** than its own
@@ -133,7 +133,7 @@ def shade_resolution(transform, shape) -> float:
     display pixel. The floor is the 10 m 3DEP grid the tiles are sampled at;
     asking for finer buys time, not detail.
     """
-    from firescape import relief
+    from stormscape import relief
 
     res_m = grid_res_m(transform, shape)
     if relief.SHADE_RES_M <= res_m / 2.0:
@@ -158,12 +158,12 @@ def _hillshade_cache(transform, shape, shade_res_m):
 
 
 def hillshade(transform, shape, *, shade_res_m: float = None, tile_dir=None):
-    """Cached hillshade on a display grid; see :mod:`firescape.relief`.
+    """Cached hillshade on a display grid; see :mod:`stormscape.relief`.
 
     ``shade_res_m`` defaults to :func:`shade_resolution` for the grid, which is
     what keeps a zoomed panel from being shaded coarser than it is drawn.
     """
-    from firescape import relief
+    from stormscape import relief
 
     if shade_res_m is None:
         shade_res_m = shade_resolution(transform, shape)

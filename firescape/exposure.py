@@ -12,7 +12,7 @@ Exposure model (deliberately transparent, v1):
 
 - A segment can *deliver* to an asset when the asset touches the segment's
   corridor, using the same contributing-area width law the verification
-  corridors use (:func:`firescape.corridor.corridor_width_m`) plus a
+  corridors use (:func:`tracescape.corridor.corridor_width_m`) plus a
   registration pad. This is a proximity proxy, not a runout model: it will
   call exposed an asset that stands beside a channel on a 3 m terrace, and it
   will miss an asset on distal fan surfaces beyond the corridor. Both errors
@@ -36,7 +36,12 @@ import numpy as np
 import pandas as pd
 
 from firescape import annualprob
-from firescape.corridor import corridor_width_m
+# The contributing-area width law is tracescape's: it was derived for the
+# verification corridors that read imagery along the network, and exposure
+# deliberately reuses it so "delivers to this asset" and "we looked for change
+# here" mean the same strip of ground. One shared definition, not two that
+# drift.
+from tracescape.corridor import corridor_width_m
 
 #: hazard columns carried from the delivering segment, statewide-product names
 SEGMENT_COLS = ("P_24mmh", "V_24mmh", "H_24mmh", "I15_50")

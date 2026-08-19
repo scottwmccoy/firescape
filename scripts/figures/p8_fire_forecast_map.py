@@ -15,7 +15,8 @@ from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.lines import Line2D
 
 import geopandas as gpd
-from firescape import paths, plotting as mc, relief
+from firescape import paths, plotting as mc
+from stormscape import relief
 
 FIRE = sys.argv[1] if len(sys.argv) > 1 else "Stallion"
 CAL = sys.argv[2] if len(sys.argv) > 2 else "statewide_v1_1"

@@ -20,7 +20,8 @@ from rasterio.features import geometry_mask
 from rasterio.warp import Resampling, reproject
 
 import geopandas as gpd
-from firescape import paths, plotting as mc, relief
+from firescape import paths, plotting as mc
+from stormscape import relief
 from stormscape import burn
 
 import sys

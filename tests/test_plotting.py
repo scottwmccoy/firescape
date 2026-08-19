@@ -55,7 +55,7 @@ def test_default_display_grid_is_finer_than_a_print_pixel():
 def test_statewide_grid_keeps_the_module_shading_resolution():
     """A coarse domain is already shaded finer than it is drawn, so the rule
     must not disturb it — statewide figures re-render byte-identical."""
-    from firescape import relief
+    from stormscape import relief
 
     tr, shape, _ = plotting.grid(
         (-120.13, 34.97, -113.94, 42.03), res=plotting.RES_DEG)
@@ -66,7 +66,7 @@ def test_statewide_grid_keeps_the_module_shading_resolution():
 def test_zoom_grid_is_shaded_finer_than_its_own_pixels():
     """relief.py rule 3. A zoom panel at ~43 m/px used to be shaded at the
     statewide 50 m — coarser than it is drawn — and arrived pre-blurred."""
-    from firescape import relief
+    from stormscape import relief
 
     tr, shape, _ = plotting.grid((-119.75, 39.2, -119.5, 39.45), res=0.0005)
     res_m = plotting.grid_res_m(tr, shape)

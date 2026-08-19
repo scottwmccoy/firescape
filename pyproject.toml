@@ -12,11 +12,14 @@ requires-python = ">=3.12"
 authors = [{ name = "Scott W. McCoy" }]
 keywords = ["debris flow", "wildfire", "burn severity", "hazard assessment", "Nevada", "pre-fire"]
 
-# NOTE: two required dependencies are deliberately NOT listed because pip
+# NOTE: three required dependencies are deliberately NOT listed because pip
 # cannot resolve them from PyPI (see CLAUDE.md "Environment"):
-#   - pfdf      -> USGS registry only:
-#                  pip install pfdf -i https://code.usgs.gov/api/v4/groups/859/-/packages/pypi/simple
+#   - pfdf       -> USGS registry only:
+#                   pip install pfdf -i https://code.usgs.gov/api/v4/groups/859/-/packages/pypi/simple
 #   - stormscape -> editable local install: pip install -e ~/git/code/stormscape
+#   - tracescape -> editable local install: pip install -e ~/git/code/tracescape
+#                   (exposure.py borrows its corridor width law; the imagery
+#                    change-detection workflow lives there, not here)
 dependencies = [
     "numpy>=1.26",
     "pandas>=2.0",

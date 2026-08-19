@@ -15,6 +15,8 @@ Pre-fire PFDF hazard tool for Nevada (USGS LHP award, Task 2/Deliverable 2, due
   `pip install pfdf -i https://code.usgs.gov/api/v4/groups/859/-/packages/pypi/simple`
   (PyPI packages named `pfdf`/`wildcat` are unrelated third-party projects.)
 - `stormscape` is an editable local install from `~/git/code/stormscape`.
+- `tracescape` is an editable local install from `~/git/code/tracescape`
+  (`exposure.py` borrows its corridor width law).
 
 ## Data layout
 
@@ -37,7 +39,25 @@ Pre-fire PFDF hazard tool for Nevada (USGS LHP award, Task 2/Deliverable 2, due
 | pysheds NoData | pysheds silently treats missing NoData as 0 — always set explicit nodata on Rasters |
 | MTBS classes | dnbr6 is SIX classes: 1=unburned-low 2=low 3=moderate 4=high **5=increased greenness (exclude) 6=non-mapping (nodata)** — not BARC4 |
 
-## DEM resampling + shaded relief (firescape/relief.py, tests/test_relief.py)
+## Sibling packages — what lives where
+
+| Package | Licence | Owns |
+|---|---|---|
+| **stormscape** | MIT | Rainfall (MRMS/NEXRAD/gauges/Atlas 14), DEMs, shaded relief, CalTopo export |
+| **tracescape** | MIT | Imagery change detection: epochs, robust z, corridor/fan conditioning. *Validates* what firescape predicts |
+| **firescape** | GPL-3 (pfdf) | Simulated severity, the hazard chain, calibration, statewide surfaces, exposure |
+
+The imagery-validation workflow was carved out to `~/git/code/tracescape` on
+2026-08-19 (it was `planetscope/sources/epochs/change/corridor/fans` +
+`scripts/verify/`). firescape imports **one** function from it,
+`corridor.corridor_width_m`, so `exposure.py`'s "delivers to this asset" and
+tracescape's "we looked for change here" mean the same strip of ground.
+**tracescape must never import firescape** — that arrow points one way only.
+
+`relief.py` moved to **stormscape** at the same time: a terrain backdrop is not
+specific to a science question, and both downstream packages draw on it.
+
+## DEM resampling + shaded relief (stormscape/relief.py)
 
 Hillshading differentiates, so it is the loudest display of a resampling
 mistake. Inherited from stormscape's 2026-07-31 finding (a nearest warp inside
