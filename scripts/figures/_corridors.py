@@ -39,6 +39,27 @@ ZOOMS = {
         blurb="north Pyramid Lake through Reno–Sparks to Carson City, "
               "Minden and Gardnerville, west to the Sierra crest above "
               "Lake Tahoe and south past Topaz Lake"),
+    # A zoom inside reno_carson, an order of magnitude tighter than any other
+    # window here (14 km, against 100+ km for the corridors). The 2026-06-19
+    # storm put debris flows off the Virginia Range front onto the fans above
+    # Hidden Valley, and they reached the Truckee at Vista -- so this is the
+    # one window where a modelled channel can be laid beside a flow that
+    # actually happened. Extent matches the stormscape rainfall zoom for the
+    # event, so the hazard sheets and the I15 sheets overlay.
+    #
+    # `res` is a tenth of the corridor windows': at 0.0005 deg this window
+    # would render 280 px wide (43 m/px) and the individual range-front
+    # drainages -- the entire point of it -- would be two pixels across.
+    # 0.0001 deg is 8.6 m/px at this latitude, just off the 10 m 3DEP floor.
+    "hidden_valley": dict(
+        bounds=(-119.77, 39.46, -119.63, 39.58), step=0.05, res=0.0001,
+        rivers=("Truckee River", "Steamboat Creek", "Boynton Slough",
+                "Long Valley Creek", "Red Ravine Creek", "Alum Creek"),
+        lakes=(),
+        label="Hidden Valley – Vista",
+        blurb="the Virginia Range front above east Reno and the Truckee "
+              "River reach at Vista, site of the 19 June 2026 unburned "
+              "debris flows"),
     "las_vegas": dict(
         bounds=(-116.35, 34.90, -113.90, 36.95), step=0.5, res=0.0006,
         rivers=("Colorado River", "Virgin River", "Muddy River"),
@@ -132,6 +153,12 @@ ZOOMS = {
 NOTABLE = {
     "Carson City", "Minden", "Gardnerville", "Gardnerville Ranchos",
     "Incline Village", "Dayton", "Virginia City", "Stateline", "Verdi",
+    # East Reno, for the Hidden Valley window: Reno and Sparks are
+    # incorporated and come through on their own, but the neighbourhoods the
+    # 2026-06-19 flows actually reached are GNIS populated places and would
+    # otherwise go unlabelled on the sheet they are the subject of.
+    "Hidden Valley", "Vista", "Glendale", "Lockwood", "Sun Valley",
+    "Spanish Springs", "Mustang", "Donovan Mill",
     "Boulder City", "Pahrump", "Mesquite", "Indian Springs", "Searchlight",
     "Laughlin", "Overton", "Logandale", "Bunkerville", "Blue Diamond",
     "Mount Charleston", "Sandy Valley", "Primm", "Moapa Valley", "Jean",
