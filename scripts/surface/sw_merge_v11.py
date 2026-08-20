@@ -61,7 +61,6 @@ basins["P_annual"] = ap.combined(p_rt)
 no_clim = int((~np.isfinite(p_rt)).sum())
 
 merged = OUT / "statewide_v1_1_basins.gpkg"
-basins.to_file(merged, driver="GPKG")
 
 # RANGES volume from the unit-emitted topo + PGA + Atlas 14 anomaly;
 # headline hazard class = Cannon(P_dispersed, V_ranges). Gartner(soft-Bmh)
@@ -88,6 +87,15 @@ basins["Vg14_24mmh"] = basins["V_24mmh"]
 basins["Hg14_24mmh"] = basins["H_24mmh"]
 basins["V_24mmh"], basins["Vmin_24mmh"], basins["Vmax_24mmh"] = _V, _Vmin, _Vmax
 basins["H_24mmh"] = _hz.combined_c10(basins["P_24mmh"].to_numpy(), _V)
+
+# Written HERE, not before the RANGES block. It used to be written the moment
+# the annual-probability columns landed, which is three assignments too early:
+# V_24mmh/H_24mmh were then overwritten with RANGES in memory, the summary was
+# built from those, and the file on disk kept Gartner. The product and its own
+# summary disagreed about which volume model it used, silently, and every
+# figure drawn from H_24mmh was Gartner while every number quoted from the
+# summary was RANGES. One write, last, after `basins` is final.
+basins.to_file(merged, driver="GPKG")
 
 h = basins["H_24mmh"]
 summary = {
