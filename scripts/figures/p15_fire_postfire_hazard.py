@@ -71,6 +71,9 @@ SEV_LABELS = ("unburned", "low", "moderate", "high")
 
 DESIGN_I15 = 24.0        # mm/h, the USGS reference storm (~1-yr, 15-minute)
 
+#: BLM surface-management wash (matches the AML district sheets).
+BLM_FILL, BLM_EDGE = "#D9C98C", "#8C7B45"
+
 
 def _severity_rgba(dnbr, breaks_x1000, shape, dst_transform, dst_crs, src):
     """BRISK dNBR on the display grid, painted in the BAER class colours.
@@ -148,6 +151,24 @@ with rasterio.open(OBS / f"{FIRE.lower()}_brisk_dnbr.tif") as ds:
         ds.read(1).astype("float64"), breaks, shape, tr, "EPSG:4326",
         {"transform": ds.transform, "crs": ds.crs})
 
+#: BLM surface-management polygons. The staged file is national in extent
+#: (-124.7 to -109.0), not Nevada-only as its name suggests, which matters
+#: here: Bug burns on the California side of the line and a state-clipped
+#: layer would have drawn nothing over 78% of it.
+try:
+    from shapely.geometry import box as _box
+    blm = gpd.read_file(paths.raw_dir("blm") / "nv_blm_sma.gpkg").to_crs("EPSG:4326")
+    blm = gpd.clip(blm, _box(*bounds))
+    blm = blm[~blm.geometry.is_empty]
+    _fire_blm = gpd.clip(blm, per.union_all())
+    BLM_FRAC = float(_fire_blm.to_crs("EPSG:5070").area.sum()
+                     / max(per.to_crs("EPSG:5070").area.sum(), 1e-9))
+    print(f"BLM: {len(blm)} feature(s) in window, "
+          f"{BLM_FRAC:.0%} of the perimeter is BLM land", flush=True)
+except Exception as exc:
+    print(f"BLM layer unavailable: {type(exc).__name__}: {exc}", flush=True)
+    blm, BLM_FRAC = None, None
+
 try:
     from stormscape import refdata
     roads = refdata.roads(bounds)
@@ -167,12 +188,29 @@ for ax, mode in zip(axes, ("severity", "likelihood", "threshold")):
     if roads is not None and len(roads):
         roads.to_crs("EPSG:4326").plot(ax=ax, color="0.25", linewidth=0.5,
                                        alpha=0.7, zorder=2)
+    # A translucent fill, not outlines. BLM here is the railroad checkerboard
+    # -- hundreds of section-sized parcels -- so stroking every boundary drew
+    # a white grid across all three panels and buried the data under its own
+    # casing. A wash reads ownership at a glance and competes with nothing.
+    # Same tan the AML district sheets use, and drawn UNDER the severity
+    # raster and the segments so it can never tint a class colour.
+    if blm is not None and len(blm):
+        blm.plot(ax=ax, facecolor=BLM_FILL, edgecolor=BLM_EDGE, linewidth=0.35,
+                 alpha=0.30, zorder=1.5, rasterized=True)
     if mode == "severity":
         ax.imshow(sev_rgba, extent=im_extent, zorder=3,
                   interpolation="nearest")
+        # The context lines ride in this legend rather than getting one of
+        # their own on each panel: they are identical on all three, and a
+        # repeated key is three chances to read it as three different things.
+        _ctx = [Line2D([0], [0], color="#56B4E9", lw=1.8, label="fire perimeter")]
+        if blm is not None and len(blm):
+            _ctx.append(Patch(facecolor=BLM_FILL, edgecolor=BLM_EDGE,
+                              alpha=0.30, label="BLM land"))
         ax.legend(handles=[Patch(facecolor=np.array(c) / 255.0,
                                  edgecolor="0.3", label=l)
-                           for c, l in zip(burn.BAER_CLASS_COLORS, SEV_LABELS)],
+                           for c, l in zip(burn.BAER_CLASS_COLORS, SEV_LABELS)]
+                          + _ctx,
                   title=f"BARC class (breaks {'/'.join(f'{b/1000:g}' for b in breaks)} dNBR)",
                   loc="lower left", fontsize=8, title_fontsize=8)
         ax.set_title("Observed burn severity — CIMSS BRISK dNBR\n"
@@ -249,6 +287,8 @@ summary = {
                    "p05": round(float(np.nanpercentile(T, 5)), 1),
                    "p95": round(float(np.nanpercentile(T, 95)), 1),
                    "n_below_design": int((T < DESIGN_I15).sum())},
+    "blm_fraction_of_perimeter": (round(BLM_FRAC, 4)
+                                  if BLM_FRAC is not None else None),
     "class_fraction_barc": {k: round(v, 4) for k, v in frac.items()},
     "class_fraction_brisk_usgs_scheme": meta.get("class_fraction", {}),
 }
