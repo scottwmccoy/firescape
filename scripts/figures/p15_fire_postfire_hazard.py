@@ -43,9 +43,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
-from matplotlib.colors import BoundaryNorm, ListedColormap
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import BoundaryNorm, ListedColormap, Normalize
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
+from matplotlib.patches import Patch, Rectangle
+from matplotlib.ticker import MaxNLocator
 from rasterio.warp import Resampling, reproject
 
 import geopandas as gpd
@@ -90,6 +92,37 @@ def _severity_rgba(dnbr, breaks_x1000, shape, dst_transform, dst_crs, src):
         m = np.isfinite(dst) & (idx == i)
         rgba[m] = (r, g, b, 0 if i == 0 else 255)
     return rgba, dst
+
+
+def inset_colorbar(ax, mappable, label, *, x=0.018, y=0.018, w=0.30,
+                   h=0.086, nticks=5, fontsize=8):
+    """A colorbar that sits INSIDE its map, lower-left, where the other panels
+    keep their legends.
+
+    An external colorbar steals width from the axes it is attached to, so the
+    one panel carrying one drew a visibly smaller map than its two neighbours
+    -- the same ground at two different scales on one sheet, which invites the
+    eye to read a difference that is not in the data. Insetting keeps every map
+    box identical and puts the key where a reader is already looking for it.
+
+    Sized in axes fractions, which is safe here because all three panels share
+    one data extent and are aspect-locked by ``plotting.style_axes``, so their
+    axes boxes are identical.
+    """
+    ax.add_patch(Rectangle((x, y), w, h, transform=ax.transAxes,
+                           facecolor="white", alpha=0.80, edgecolor="0.8",
+                           linewidth=0.8, zorder=11))
+    # Horizontal inset leaves room for the extend arrows, which overhang the
+    # cax and would otherwise touch the frame.
+    cax = ax.inset_axes([x + 0.045, y + 0.030, w - 0.090, 0.017], zorder=12)
+    cb = ax.figure.colorbar(mappable, cax=cax, orientation="horizontal",
+                            extend="both")
+    cb.outline.set_linewidth(0.6)
+    cb.ax.tick_params(labelsize=fontsize, length=2.5, width=0.6, pad=1.5)
+    cb.locator = MaxNLocator(nbins=nticks - 1)
+    cb.update_ticks()
+    cax.set_title(label, fontsize=fontsize, pad=3.5)
+    return cb
 
 
 meta = json.loads((OBS / "observed_severity_summary.json").read_text())
@@ -160,9 +193,10 @@ for ax, mode in zip(axes, ("severity", "likelihood", "threshold")):
     else:
         seg.sort_values("I15_50", ascending=False).plot(
             ax=ax, column="I15_50", cmap="plasma_r", linewidth=1.6,
-            vmin=lo, vmax=hi, zorder=5, legend=True,
-            legend_kwds={"shrink": 0.5, "pad": 0.02,
-                         "label": "triggering $I_{15}$ (mm/h) at 50% likelihood"})
+            vmin=lo, vmax=hi, zorder=5, legend=False)
+        _sm = ScalarMappable(norm=Normalize(vmin=lo, vmax=hi), cmap="plasma_r")
+        _sm.set_array([])
+        inset_colorbar(ax, _sm, "triggering $I_{15}$ (mm/h)")
         ax.set_title("Rainfall intensity that triggers a debris flow\n"
                      "inverting the same fit at p = 0.5 · lower = smaller storm",
                      fontsize=10.5)
