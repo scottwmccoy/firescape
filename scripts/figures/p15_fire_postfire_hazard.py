@@ -54,9 +54,16 @@ import geopandas as gpd
 from firescape import paths, plotting as mc
 from stormscape import burn, relief
 
-FIRE = sys.argv[1] if len(sys.argv) > 1 else "Stallion"
-CAL = sys.argv[2] if len(sys.argv) > 2 else "statewide_v1_2"
-OBS = paths.products_dir("forecast", f"{FIRE.lower()}_observed")
+#: ``--prefire`` swaps the severity source and nothing else. The two products
+#: MUST stay visually identical: the whole value of a pre-fire sheet is that it
+#: can be laid beside the post-fire one for the same ground, and any difference
+#: in layout would be read as a difference in the hazard.
+PREFIRE = "--prefire" in sys.argv
+_pos = [a for a in sys.argv[1:] if not a.startswith("-")]
+FIRE = _pos[0] if _pos else "Stallion"
+CAL = _pos[1] if len(_pos) > 1 else "statewide_v1_2"
+OBS = paths.products_dir(
+    "forecast", f"{FIRE.lower()}_{CAL}" if PREFIRE else f"{FIRE.lower()}_observed")
 
 #: USGS likelihood classes -- the breaks every emergency assessment reports,
 #: and the ones already exported to CalTopo for the field team. ColorBrewer
@@ -90,7 +97,10 @@ def _severity_rgba(dnbr, breaks_x1000, shape, dst_transform, dst_crs, src):
               resampling=Resampling.nearest, src_nodata=np.nan,
               dst_nodata=np.nan)
     rgba = np.zeros(shape + (4,), dtype="uint8")
-    idx = np.digitize(dst * 1000.0, list(breaks_x1000))
+    # BRISK ships raw dNBR (~-0.3 to 1.0); the simulated raster is already
+    # x1000, the MTBS convention the breaks are stated in. One scale factor,
+    # applied at the one place the two sources meet.
+    idx = np.digitize(dst * src["scale"], list(breaks_x1000))
     for i, (r, g, b) in enumerate(burn.BAER_CLASS_COLORS):
         m = np.isfinite(dst) & (idx == i)
         rgba[m] = (r, g, b, 0 if i == 0 else 255)
@@ -128,9 +138,18 @@ def inset_colorbar(ax, mappable, label, *, x=0.018, y=0.018, w=0.30,
     return cb
 
 
-meta = json.loads((OBS / "observed_severity_summary.json").read_text())
+if PREFIRE:
+    meta = json.loads((OBS / "forecast_summary.json").read_text())
+    seg_path = OBS / f"{FIRE.lower()}_segments.gpkg"
+    sev_path = OBS / f"{FIRE.lower()}_sim_dnbr_x1000.tif"
+    SEV_SCALE = 1.0                      # already x1000
+else:
+    meta = json.loads((OBS / "observed_severity_summary.json").read_text())
+    seg_path = OBS / f"{FIRE.upper()}_segments.gpkg"
+    sev_path = OBS / f"{FIRE.lower()}_brisk_dnbr.tif"
+    SEV_SCALE = 1000.0                   # BRISK is raw dNBR
 breaks = meta["barc_breaks_x1000"]
-seg = gpd.read_file(OBS / f"{FIRE.upper()}_segments.gpkg").to_crs("EPSG:4326")
+seg = gpd.read_file(seg_path).to_crs("EPSG:4326")
 per = gpd.read_file(
     sorted(paths.raw_dir("perimeters").glob("wfigs_current_*.geojson"))[-1])
 ncol = next(c for c in per.columns if c.endswith("IncidentName"))
@@ -146,10 +165,27 @@ hs = relief.shaded_relief(
     tr, shape, crs="EPSG:4326", shade_res_m=20.0)
 im_extent = tuple(extent)
 
-with rasterio.open(OBS / f"{FIRE.lower()}_brisk_dnbr.tif") as ds:
+with rasterio.open(sev_path) as ds:
+    _arr = ds.read(1).astype("float64")
+    if ds.nodata is not None:            # sim raster carries -9999, not NaN
+        _arr[_arr == ds.nodata] = np.nan
     sev_rgba, sev_on_grid = _severity_rgba(
-        ds.read(1).astype("float64"), breaks, shape, tr, "EPSG:4326",
-        {"transform": ds.transform, "crs": ds.crs})
+        _arr, breaks, shape, tr, "EPSG:4326",
+        {"transform": ds.transform, "crs": ds.crs, "scale": SEV_SCALE})
+
+# The simulated raster covers the whole analysis domain -- the perimeter plus a
+# 2 km pad, which in EPSG:5070 renders as a rotated rectangle of "severity"
+# over ground that is not burning. Clip it to the perimeter: outside it the
+# number is a hypothetical about unburnt hillsides, and drawing it invites
+# exactly the wrong reading. Observed severity is NOT clipped -- BRISK is a
+# measurement, its footprint is data, and a WFIGS perimeter disagreeing with it
+# at the edge is information rather than error.
+if PREFIRE:
+    from rasterio.features import geometry_mask
+    _outside = geometry_mask([per.union_all()], out_shape=shape, transform=tr,
+                             invert=False)
+    sev_rgba[_outside] = 0
+    sev_on_grid = np.where(_outside, np.nan, sev_on_grid)
 
 #: BLM surface-management polygons. The staged file is national in extent
 #: (-124.7 to -109.0), not Nevada-only as its name suggests, which matters
@@ -213,9 +249,14 @@ for ax, mode in zip(axes, ("severity", "likelihood", "threshold")):
                           + _ctx,
                   title=f"BARC class (breaks {'/'.join(f'{b/1000:g}' for b in breaks)} dNBR)",
                   loc="lower left", fontsize=8, title_fontsize=8)
-        ax.set_title("Observed burn severity — CIMSS BRISK dNBR\n"
-                     f"scene {', '.join(meta['scene_dates'])} · "
-                     "vegetation change, not soil burn severity", fontsize=10.5)
+        ax.set_title(
+            ("Simulated burn severity — pre-fire, no imagery\n"
+             f"every pixel burns at the {meta.get('region','?')} quantile "
+             f"P$_{{dsim}}$ = {meta.get('pdsim','?')}")
+            if PREFIRE else
+            ("Observed burn severity — CIMSS BRISK dNBR\n"
+             f"scene {', '.join(meta['scene_dates'])} · "
+             "vegetation change, not soil burn severity"), fontsize=10.5)
     elif mode == "likelihood":
         # Ascending, so the most likely segments finish on top rather than
         # being overdrawn by a quiet neighbour at a confluence.
@@ -243,6 +284,22 @@ for ax, mode in zip(axes, ("severity", "likelihood", "threshold")):
     mc.style_axes(ax, extent, step=0.1)
 
 age = meta.get("composite_age_days")
+if PREFIRE:
+    _kind = "pre-fire debris-flow forecast (simulated severity)"
+    _prov = (f"NO burn-severity imagery exists for this fire — severity is "
+             f"SIMULATED from LANDFIRE vegetation, assuming the whole "
+             f"perimeter burns at the {meta.get('region','?')} calibrated "
+             f"quantile P$_{{dsim}}$ = {meta.get('pdsim','?')}")
+    _caveat = ("Real fires leave unburned islands and a severity mosaic, so "
+               "these are an upper expectation for the footprint, not an "
+               "emergency assessment; the perimeter is today's and an "
+               "uncontained fire grows. Supersede with a BRISK or BAER run "
+               "the moment one lands.")
+else:
+    _kind = "post-fire debris-flow hazard on observed severity"
+    _prov = (f"BRISK composite {', '.join(meta['scene_dates'])}, {age} d old — "
+             f"{meta.get('magnitude_caveat','')}")
+    _caveat = ""
 
 # Class fractions computed from the SAME array the map paints, at the SAME
 # breaks. The summary JSON also carries a class_fraction, but it is BRISK's
@@ -250,32 +307,39 @@ age = meta.get("composite_age_days")
 # not the four BARC classes these breaks define -- quoting it under this legend
 # put "14% moderate or high" in the title over a map showing 21%. One binning
 # per sheet.
-_v = sev_on_grid[np.isfinite(sev_on_grid)] * 1000.0
+# SEV_SCALE, not a literal: this line carried a hardcoded x1000 from when
+# BRISK was the only source, and the pre-fire raster is already x1000 --
+# so the map painted correctly while the title claimed 100% high. Same
+# number-vs-picture split as the class_fraction bug above, reintroduced
+# by generalising the source and not its twin. One scale, one place.
+_v = sev_on_grid[np.isfinite(sev_on_grid)] * SEV_SCALE
 _idx = np.digitize(_v, list(breaks))
 frac = {lab: float((_idx == i).mean()) for i, lab in enumerate(SEV_LABELS)}
 modhigh = frac["moderate"] + frac["high"]
 print("BARC class fractions on the display grid: "
       + ", ".join(f"{k} {v:.1%}" for k, v in frac.items()), flush=True)
 fig.suptitle(
-    f"{FIRE} fire — post-fire debris-flow hazard on observed severity · "
+    f"{FIRE} fire — {_kind} · "
     f"{len(seg):,} segments · {CAL} calibration, {meta.get('region','?')}\n"
     f"median P at {DESIGN_I15:g} mm/h = {np.nanmedian(P):.2f} · "
     f"{int((P >= 0.5).sum()):,} segments at or above 50% · "
     f"median triggering $I_{{15}}$ {np.nanmedian(T):.1f} mm/h "
     f"(5–95%: {np.nanpercentile(T, 5):.0f}–{np.nanpercentile(T, 95):.0f})\n"
-    f"BRISK composite {', '.join(meta['scene_dates'])}, {age} d old — "
-    f"{meta.get('magnitude_caveat','')}; {modhigh:.0%} of burned pixels "
-    "moderate or high at these breaks",
+    f"{_prov}; {modhigh:.0%} of pixels moderate or high at these breaks"
+    + (f"\n{_caveat}" if _caveat else ""),
     y=0.985, fontsize=12)
 
 
 fig.subplots_adjust(top=0.90, bottom=0.06, left=0.03, right=0.97)
-mc.save(fig, f"{FIRE.lower()}_postfire_hazard")
+mc.save(fig, f"{FIRE.lower()}_{'prefire' if PREFIRE else 'postfire'}_hazard")
 plt.close(fig)
 
 summary = {
     "fire": FIRE, "calibration": CAL,
-    "severity_source": "CIMSS BRISK", "scene_dates": meta["scene_dates"],
+    "severity_source": ("simulated (LANDFIRE EVT + Staley 2018 CDFs)"
+                        if PREFIRE else "CIMSS BRISK"),
+    "scene_dates": meta.get("scene_dates"),
+    "pdsim": meta.get("pdsim"), "region": meta.get("region"),
     "composite_age_days": age, "barc_breaks_x1000": breaks,
     "design_storm_i15_mmh": DESIGN_I15,
     "segments": int(len(seg)),
@@ -292,5 +356,6 @@ summary = {
     "class_fraction_barc": {k: round(v, 4) for k, v in frac.items()},
     "class_fraction_brisk_usgs_scheme": meta.get("class_fraction", {}),
 }
-(OBS / "postfire_hazard_summary.json").write_text(json.dumps(summary, indent=2))
+(OBS / f"{'prefire' if PREFIRE else 'postfire'}_hazard_summary.json"
+ ).write_text(json.dumps(summary, indent=2))
 print(json.dumps(summary, indent=2), flush=True)

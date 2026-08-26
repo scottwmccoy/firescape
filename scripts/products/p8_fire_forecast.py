@@ -90,6 +90,24 @@ result = prefire.run_unit(geom, cfg, unit_key=FIRE.lower(), crs=per.crs,
 prefire.save_unit(result, OUT)
 print(f"{result['n_segments']:,} segments -> {OUT}", flush=True)
 
+# The simulated severity raster, which save_unit does not persist -- it is a
+# per-unit intermediate and the statewide driver runs 591 of them, so writing
+# it there would litter. Per fire it is worth keeping: it is the input the
+# whole forecast rests on, and a map of the hazard is not interpretable
+# without seeing which vegetation the model decided would burn hard.
+# Units are dNBR x1000 (MTBS convention), the same scale as cfg.barc_breaks.
+import rasterio
+
+_dem = result["rasters"]["dem"]
+_sim = np.asarray(result["rasters"]["sim_dnbr"], dtype="float32")
+_sim_path = OUT / f"{FIRE.lower()}_sim_dnbr_x1000.tif"
+with rasterio.open(_sim_path, "w", driver="GTiff", height=_sim.shape[0],
+                   width=_sim.shape[1], count=1, dtype="float32",
+                   crs=_dem.crs, transform=_dem.affine, nodata=-9999.0,
+                   compress="deflate") as _ds:
+    _ds.write(np.where(np.isfinite(_sim), _sim, -9999.0), 1)
+print(f"wrote {_sim_path.name}", flush=True)
+
 seg = gpd.read_file(OUT / f"{FIRE.lower()}_segments.gpkg")
 thr = seg["I15_50"].to_numpy() if "I15_50" in seg else seg["thresh_i15"].to_numpy()
 p24 = seg["P_24mmh"].to_numpy()
@@ -98,6 +116,7 @@ q = np.percentile(thr[ok], [5, 25, 50, 75, 95])
 summary = {
     "fire": FIRE, "perimeter_file": PERIM.name, "acres": round(acres),
     "calibration": CAL, "region": region, "pdsim": cal.pdsim,
+    "barc_breaks_x1000": list(cal.barc_breaks),
     "segments": int(len(seg)),
     "segments_with_threshold": int(ok.sum()),
     "triggering_i15_mmh": {"p05": round(q[0], 1), "p25": round(q[1], 1),
