@@ -329,3 +329,77 @@ def test_footnote_sits_inside_the_panel_span():
     assert bb.x0 >= 0.8 - 0.2 and bb.x1 <= 5.6 + 0.2
     assert "\n" in t.get_text()
     plt.close(fig)
+
+
+# --- key placement ---------------------------------------------------------
+
+def test_clear_corner_keeps_the_default_when_no_corner_is_covered():
+    # A blob in the middle blocks nothing: the key stays where the sheets
+    # have always put it rather than drifting to a marginally emptier corner.
+    extent = (-120.0, -119.0, 39.0, 40.0)
+    per = gpd.GeoSeries([box(-119.6, 39.4, -119.4, 39.6)])
+
+    key = plotting.clear_corner(extent, per, size=(0.30, 0.20))
+
+    assert key["loc"] == "lower left"
+    assert key["xy"] == (0.015, 0.015)
+    assert max(key["overlap"].values()) == 0.0
+
+
+def test_clear_corner_moves_off_a_perimeter_in_the_default_corner():
+    extent = (-120.0, -119.0, 39.0, 40.0)
+    per = gpd.GeoSeries([box(-120.0, 39.0, -119.6, 39.4)])   # lower-left lobe
+
+    key = plotting.clear_corner(extent, per, size=(0.30, 0.20))
+
+    assert key["loc"] != "lower left"
+    assert key["overlap"]["lower left"] == pytest.approx(1.0)
+    assert key["overlap"][key["loc"]] == 0.0
+    assert key["xy"][1] > 0.5 or key["xy"][0] > 0.5          # not lower-left
+
+
+def test_clear_corner_ignores_a_clip_smaller_than_the_tolerance():
+    # The perimeter just clips the key's own corner -> not worth moving for.
+    extent = (-120.0, -119.0, 39.0, 40.0)
+    per = gpd.GeoSeries([box(-120.0, 39.0, -119.98, 39.02)])
+
+    key = plotting.clear_corner(extent, per, size=(0.30, 0.20))
+
+    assert 0.0 < key["overlap"]["lower left"] < 0.01
+    assert key["loc"] == "lower left"
+
+
+def test_clear_corner_gives_a_line_network_width_to_overlap_with():
+    # Arealess geometry would intersect every corner at zero and always pick
+    # the default; the buffer is what makes a stream network usable here.
+    extent = (-120.0, -119.0, 39.0, 40.0)
+    net = gpd.GeoSeries([LineString([(-119.99, 39.01), (-119.9, 39.1)])])
+
+    key = plotting.clear_corner(extent, net, size=(0.30, 0.20))
+
+    assert key["overlap"]["lower left"] > 0.0
+    assert key["loc"] != "lower left"
+
+
+def test_corner_xy_places_a_box_inside_every_corner():
+    for loc in plotting.KEY_CORNERS:
+        x, y = plotting.corner_xy(loc, (0.30, 0.20), pad=0.02)
+        assert 0.0 <= x <= 1.0 - 0.30 and 0.0 <= y <= 1.0 - 0.20
+        assert (x == pytest.approx(0.02)) == loc.endswith("left")
+        assert (y == pytest.approx(0.02)) == loc.startswith("lower")
+
+
+def test_caption_reserves_space_below_the_axes():
+    # subplots, not add_axes: the reserve works through subplots_adjust, which
+    # an absolutely-positioned axes ignores.
+    fig, ax = plt.subplots(figsize=(8, 5), dpi=100)
+    ax.plot([0, 1], [0, 1])
+    art = plotting.caption(fig, "a caption " * 40, label="Figure 1.")
+    fig.canvas.draw()
+    bb = art.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+
+    assert fig.subplotpars.bottom > 0.11               # axes moved up
+    assert bb.y1 < ax.get_tightbbox().transformed(
+        fig.dpi_scale_trans.inverted()).y0            # and cleared the labels
+    assert art.get_text().startswith(r"$\mathbf{Figure\;1.}$")
+    plt.close(fig)

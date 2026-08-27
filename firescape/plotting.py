@@ -453,6 +453,172 @@ def footnote(fig, text: str, *, fontsize: float = 6.5, color: str = "#444444",
                     linespacing=1.35)
 
 
+#: Corners a map key can sit in, in the order ties are broken. Lower-left
+#: first: it is where these sheets have always put their keys, so a key only
+#: moves when the data actually gives it a reason to.
+KEY_CORNERS = ("lower left", "lower right", "upper left", "upper right")
+
+
+def corner_xy(loc: str, size, pad: float = 0.015):
+    """Lower-left ``(x, y)`` in axes fractions of a ``size`` box in ``loc``."""
+    w, h = size
+    return (pad if loc.endswith("left") else 1.0 - pad - w,
+            pad if loc.startswith("lower") else 1.0 - pad - h)
+
+
+def clear_corner(extent, geoms, *, size=(0.32, 0.22), pad: float = 0.015,
+                 default: str = "lower left", tol: float = 0.01,
+                 candidates=KEY_CORNERS):
+    """The corner of a map that a key of ``size`` hides the least of ``geoms``.
+
+    A legend pinned to one corner for every fire eventually lands on the fire.
+    On a long, low perimeter the lower-left corner is empty ground; on a
+    perimeter that reaches into it, the key covers the very hillsides the map
+    exists to show -- and the reader cannot tell whether what is hidden is
+    unburned or the worst of the burn.
+
+    So: put the box in each corner in turn, intersect it with the geometry
+    that matters (the perimeter), and take the corner it covers least. Ties go
+    to ``default``, which is listed first -- an empty corner should never win
+    on a tiebreak against the corner the sheets normally use. ``tol`` makes
+    that tie generous: a key clipping 1% of its own area on the far edge of a
+    perimeter is not worth moving for, and a rule that moves it anyway puts
+    the key somewhere different on every sheet for reasons no reader can see.
+
+    ``extent`` is the map's ``(left, right, bottom, top)`` in DATA coordinates
+    (the tuple ``grid`` returns, and the one handed to ``imshow``); ``geoms``
+    is a GeoSeries/GeoDataFrame/geometry in those same coordinates. Line or
+    point geometries (a stream network) are buffered to 1% of the diagonal so
+    they have an area to overlap. ``size`` is the key's ``(width, height)`` in
+    AXES fractions -- pass the largest key on the sheet if several must share
+    one corner.
+
+    Returns ``{"loc", "xy", "overlap"}``: a matplotlib ``loc`` string, the
+    lower-left of that box in axes fractions (for ``inset_axes``-style keys),
+    and every candidate's overlap fraction, which is worth printing.
+    """
+    from shapely.geometry import box as _box
+
+    geom = getattr(geoms, "union_all", None)
+    geom = geom() if callable(geom) else geoms
+    x0, x1, y0, y1 = (float(v) for v in extent)
+    order = [default] + [c for c in candidates if c != default]
+    if geom is None or getattr(geom, "is_empty", True):
+        return {"loc": default, "xy": corner_xy(default, size, pad),
+                "overlap": {}}
+    if geom.area <= 0:                       # lines/points: give them a width
+        geom = geom.buffer(0.01 * ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5)
+    w, h = size
+    overlap = {}
+    for loc in order:
+        fx, fy = corner_xy(loc, size, pad)
+        bx = sorted((x0 + fx * (x1 - x0), x0 + (fx + w) * (x1 - x0)))
+        by = sorted((y0 + fy * (y1 - y0), y0 + (fy + h) * (y1 - y0)))
+        rect = _box(bx[0], by[0], bx[1], by[1])
+        overlap[loc] = float(rect.intersection(geom).area / rect.area)
+    best = min(order, key=lambda c: (int(overlap[c] / max(tol, 1e-9)),
+                                     order.index(c)))
+    return {"loc": best, "xy": corner_xy(best, size, pad), "overlap": overlap}
+
+
+def _mathbold(text: str) -> str:
+    r"""``text`` as a mathtext bold run that survives word wrapping.
+
+    The caption is wrapped by :func:`wrap_text`, which splits on whitespace --
+    so a bold lead-in has to contain none. Mathtext's ``\;`` is a space that
+    ``textwrap`` cannot see, which keeps the whole label as one token.
+    """
+    safe = (text.replace("\\", "").replace("$", "").replace("_", r"\_")
+                .replace("%", r"\%"))
+    return r"$\mathbf{" + safe.replace(" ", r"\;") + "}$"
+
+
+def caption(fig, text: str, *, label: str = None, fontsize: float = 9.0,
+            color: str = "#1a1a1a", pad_in: float = 0.11, width_in: float = None,
+            ha: str = "left", reserve: bool = True, columns="auto",
+            measure_in: float = 8.5, gutter_in: float = 0.45):
+    """A journal-style caption under the panels, INSTEAD of a figure title.
+
+    A block of type across the top of a sheet is a poster convention: it is
+    read before the figure, competes with it for the eye, and has to be
+    re-read as a title even though everything in it is provenance. Journals
+    put the same words below the graphic, where they are read after it and in
+    the order a reader wants them -- what the figure is, then what each panel
+    shows, then the caveats. Short panel titles stay on the panels; everything
+    else belongs here.
+
+    ``label`` is the bold lead-in ("Stallion fire.", "Figure 3.").
+
+    **Columns.** A caption set across a 24-inch sheet runs ~350 characters to
+    the line and stops being readable; a journal's caption is only ever as
+    wide as its figure column. ``columns="auto"`` therefore splits the text
+    into as many columns as it takes to keep each near ``measure_in`` inches
+    (~90-100 characters), and fills them newspaper-fashion. Pass an integer to
+    force a count -- ``columns=1`` restores a single block.
+
+    With ``reserve`` the figure's bottom margin is grown to fit the block --
+    call this AFTER the panels are laid out (the span and the required height
+    are both measured), and note that the axes move up, not the caption. The
+    reserve goes through ``subplots_adjust``, so it moves subplot axes only;
+    an axes placed absolutely with ``add_axes`` has to be given its own room.
+    """
+    fig.canvas.draw()
+    x0, x1 = panel_span(fig)
+    fig_w, fig_h = fig.get_size_inches()
+    total_in = (x1 - x0) if width_in is None else width_in
+    ncols = (max(1, int(round(total_in / measure_in)))
+             if columns == "auto" else max(1, int(columns)))
+    col_w = (total_in - (ncols - 1) * gutter_in) / ncols
+    body = text if label is None else f"{_mathbold(label)} {text}"
+    lines = wrap_text(fig, body, col_w, fontsize=fontsize).split("\n")
+    rows = -(-len(lines) // ncols)
+    chunks = [c for c in ("\n".join(lines[i * rows:(i + 1) * rows])
+                          for i in range(ncols)) if c]
+
+    if len(chunks) == 1:                      # single block: honour ``ha``
+        x = {"center": (x0 + x1) / 2, "left": x0, "right": x1}[ha] / fig_w
+        arts = [fig.text(x, pad_in / fig_h, chunks[0], ha=ha, va="bottom",
+                         fontsize=fontsize, color=color, linespacing=1.45)]
+        fig.canvas.draw()
+    else:
+        # Columns are TOP-aligned on a common line: a short last column hung
+        # from the bottom leaves a ragged top edge that reads as a separate
+        # note rather than as the rest of the sentence.
+        first = fig.text(x0 / fig_w, pad_in / fig_h, chunks[0], ha="left",
+                         va="bottom", fontsize=fontsize, color=color,
+                         linespacing=1.45)
+        fig.canvas.draw()
+        h_in = (first.get_window_extent()
+                .transformed(fig.dpi_scale_trans.inverted()).height)
+        y_top = (pad_in + h_in) / fig_h
+        first.set_va("top")
+        first.set_y(y_top)
+        arts = [first]
+        for i, chunk in enumerate(chunks[1:], start=1):
+            arts.append(fig.text((x0 + i * (col_w + gutter_in)) / fig_w, y_top,
+                                 chunk, ha="left", va="top", fontsize=fontsize,
+                                 color=color, linespacing=1.45))
+        fig.canvas.draw()
+
+    h_in = max((a.get_window_extent()
+                .transformed(fig.dpi_scale_trans.inverted()).height)
+               for a in arts)
+    if reserve:
+        # Clear the axes' TIGHT bbox, not their subplot box: the x tick labels
+        # hang below the frame, and reserving against the frame alone parks the
+        # caption's first line on top of them. Measured, then the deficit is
+        # added to the bottom margin -- one pass, because moving the axes up
+        # cannot bring anything new below them.
+        tb = [ax.get_tightbbox() for ax in fig.axes]
+        low = min([b.transformed(fig.dpi_scale_trans.inverted()).y0
+                   for b in tb if b is not None] or [fig_h])
+        want = pad_in + h_in + pad_in
+        if low < want:
+            fig.subplots_adjust(bottom=fig.subplotpars.bottom
+                                + (want - low) / fig_h)
+    return arts if len(arts) > 1 else arts[0]
+
+
 def save(fig, stem: str, *, dpi: int = 300, formats=("pdf",)):
     """Write a figure to ``figures/`` in each format. Returns the paths.
 

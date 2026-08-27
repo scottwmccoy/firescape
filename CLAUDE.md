@@ -130,6 +130,11 @@ the statewide figure 2026-08-14.
 - Figures go through `firescape.plotting` (house style: geographic axes, data
   alpha ≤ 0.6, no graticule, colourblind-safe ramps, PDF only since 2026-08-14) and
   `firescape.relief` (hillshade). Never restyle a figure in a one-off script.
+- **Captions, not titles** (since 2026-08-27): no `fig.suptitle` on a deliverable.
+  Panel titles stay to one short line; the run, the numbers, the provenance and
+  the caveats go in `plotting.caption(fig, text, label="Stallion fire.")`, which
+  wraps to the panel span, sets wide sheets in columns, and reserves its own
+  space. Scratch/diagnostic plots may still be titled.
 - Calibration values are TOML **files** (firescape/data/calibration/), never
   Python constants; adopted calibrations get committed. Region polygons are
   GeoJSON keyed by `region` name; TOML sections use the same names.

@@ -24,10 +24,23 @@ Panels:
    the five USGS likelihood classes. Same breaks and colours as the CalTopo
    field layers, so the map and the phone agree.
 3. **Triggering intensity** -- I15 at which modelled likelihood reaches 50%,
-   from inverting the same M1 fit. Low = responds to a small storm.
+   from inverting the same M1 fit. Low = responds to a small storm. Its colour
+   bar carries a **second scale**: the annual chance of a storm that big,
+   from the fire's own NOAA Atlas 14 intensity-frequency fit. Atlas 14 makes
+   I15 log-linear in recurrence interval, so that scale is monotone in the
+   colour ramp and its decades land evenly along the bar -- one ramp, two
+   readings of the same segment, and no fourth panel needed. What it is NOT
+   is a per-segment annual probability: the fit is the fire median, and the
+   spread it hides is measured and quoted in the caption. A per-segment
+   P(R>T) map is a different product (see ``annualprob``/M5).
 
 Panels 2 and 3 are two readings of one model, not two models: 24 mm/h into M1
 gives panel 2, and p=0.5 back out of M1 gives panel 3.
+
+**No figure title.** Everything that used to sit in the suptitle -- run,
+calibration, statistics, provenance, caveats -- is set as a caption under the
+panels (``plotting.caption``), the way a journal sets one. Panel titles stay
+short. See ``plotting.caption`` for why.
 
     python scripts/figures/p15_fire_postfire_hazard.py [Fire] [calibration]
 """
@@ -61,7 +74,13 @@ from stormscape import burn, relief
 PREFIRE = "--prefire" in sys.argv
 _pos = [a for a in sys.argv[1:] if not a.startswith("-")]
 FIRE = _pos[0] if _pos else "Stallion"
-CAL = _pos[1] if len(_pos) > 1 else "statewide_v1_2"
+#: Only the pre-fire product is *keyed* by calibration, so only it needs a
+#: default here. An observed run is keyed by fire, and the calibration that
+#: set its breaks is recorded in its own summary -- read the label from there
+#: rather than from this default, which went stale the moment the breaks were
+#: recalibrated and put "statewide_v1_2" over a v1_3 map.
+_CAL_ARG = _pos[1] if len(_pos) > 1 else None
+CAL = _CAL_ARG or "statewide_v1_2"
 OBS = paths.products_dir(
     "forecast", f"{FIRE.lower()}_{CAL}" if PREFIRE else f"{FIRE.lower()}_observed")
 
@@ -74,9 +93,26 @@ P_COLORS = ("#2C7BB6", "#ABD9E9", "#FFFFBF", "#FDAE61", "#D7191C")
 P_LABELS = ("< 20%", "20–40%", "40–60%", "60–80%", "≥ 80%")
 
 #: BAER's four published severity colours (teal / cyan / yellow / dark red).
+#: ``unburned`` is drawn transparent (see ``_severity_rgba``), so its
+#: swatch says so rather than showing a teal no pixel carries.
 SEV_LABELS = ("unburned", "low", "moderate", "high")
+SEV_LEGEND = ("unburned (not drawn)", "low", "moderate", "high")
 
 DESIGN_I15 = 24.0        # mm/h, the USGS reference storm (~1-yr, 15-minute)
+
+#: Opacity of the severity wash. The BARC classes are categorical -- they have
+#: to stay *identifiable*, not exact -- and at full opacity they paint out the
+#: terrain that explains where debris flows come from, which is the one thing
+#: this panel shares with its two neighbours. 0.60 is the house-style ceiling
+#: for data over terrain (repo CLAUDE.md) and every class still reads against
+#: the others at it, while ridges and drainages show through.
+SEV_ALPHA = 0.60
+
+#: Annual-exceedance ticks for the second scale on the triggering-intensity
+#: bar. Atlas 14 makes I15 log-linear in recurrence interval, and P = 1 -
+#: exp(-1/RI) is ~1/RI once P is small, so these land at even spacing along
+#: the bar -- one decade of rarity per fixed number of mm/h.
+P_AXIS_TICKS = (0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001)
 
 #: BLM surface-management wash (matches the AML district sheets).
 BLM_FILL, BLM_EDGE = "#D9C98C", "#8C7B45"
@@ -97,20 +133,81 @@ def _severity_rgba(dnbr, breaks_x1000, shape, dst_transform, dst_crs, src):
               resampling=Resampling.nearest, src_nodata=np.nan,
               dst_nodata=np.nan)
     rgba = np.zeros(shape + (4,), dtype="uint8")
+    a = int(round(255 * SEV_ALPHA))
     # BRISK ships raw dNBR (~-0.3 to 1.0); the simulated raster is already
     # x1000, the MTBS convention the breaks are stated in. One scale factor,
     # applied at the one place the two sources meet.
     idx = np.digitize(dst * src["scale"], list(breaks_x1000))
     for i, (r, g, b) in enumerate(burn.BAER_CLASS_COLORS):
         m = np.isfinite(dst) & (idx == i)
-        rgba[m] = (r, g, b, 0 if i == 0 else 255)
+        rgba[m] = (r, g, b, 0 if i == 0 else a)
     return rgba, dst
 
 
-def inset_colorbar(ax, mappable, label, *, x=0.018, y=0.018, w=0.30,
-                   h=0.086, nticks=5, fontsize=8):
-    """A colorbar that sits INSIDE its map, lower-left, where the other panels
-    keep their legends.
+def climatology_fit(seg):
+    """Fire-median Atlas 14 I15-vs-recurrence fit, or ``None`` if unavailable.
+
+    NOAA Atlas 14 anchors the log-linear intensity-frequency line per point
+    (``annualprob`` Eqns 6-8); sampling it at every segment and taking the
+    median gives ONE line for the fire. That is the honest resolution for a
+    scale drawn beside a colourbar: within a single perimeter the 1-year I15
+    varies by a couple of mm/h, so a per-segment axis would be false
+    precision, but the *spread* it hides is measured here and quoted in the
+    caption rather than dropped.
+
+    Returns the median slope/intercept, the per-segment pair, and the
+    fractional 5-95% spread of P at the fire's median triggering intensity.
+    """
+    from rasterio.transform import Affine
+
+    from firescape import annualprob as ap
+    try:
+        z = np.load(paths.interim_dir("statewide") / "atlas14_i15.npz")
+    except (FileNotFoundError, OSError) as exc:
+        print(f"Atlas 14 grids unavailable ({type(exc).__name__}) — "
+              "triggering-intensity bar gets no probability scale", flush=True)
+        return None
+    i1g, i50g, tr = z["i1"], z["i50"], Affine(*z["transform"])
+    cent = seg.geometry.centroid.to_crs("EPSG:4269")
+    cols = ((cent.x - tr.c) / tr.a).astype(int).to_numpy()
+    rows = ((cent.y - tr.f) / tr.e).astype(int).to_numpy()
+    ok = ((rows >= 0) & (rows < i1g.shape[0])
+          & (cols >= 0) & (cols < i1g.shape[1]))
+    i1 = np.full(len(seg), np.nan)
+    i50 = np.full(len(seg), np.nan)
+    i1[ok], i50[ok] = i1g[rows[ok], cols[ok]], i50g[rows[ok], cols[ok]]
+    m, b = ap.fit_log_linear(i1, i50)
+    fin = np.isfinite(m) & np.isfinite(b)
+    if fin.mean() < 0.5:
+        print(f"Atlas 14 covers only {fin.mean():.0%} of segments — "
+              "no probability scale", flush=True)
+        return None
+    m_med, b_med = float(np.median(m[fin])), float(np.median(b[fin]))
+    t_med = float(np.nanmedian(seg["I15_50"].to_numpy()))
+    p_seg = ap.annual_probability(
+        ap.recurrence_interval(np.full(int(fin.sum()), t_med), m[fin], b[fin]))
+    p5, p50, p95 = np.percentile(p_seg, [5, 50, 95])
+    return {"m": m_med, "b": b_med, "m_seg": m, "b_seg": b, "covered": float(fin.mean()),
+            "i15_1yr_med": float(np.nanmedian(i1)), "i15_50yr_med": float(np.nanmedian(i50)),
+            "p_at_median_T": float(p50), "p_spread_frac": float((p95 - p5) / 2 / p50),
+            "p_at_median_T_p05": float(p5), "p_at_median_T_p95": float(p95)}
+
+
+def i15_of_p(p, fit):
+    """The 15-minute intensity whose annual exceedance probability is ``p``."""
+    ri = -1.0 / np.log(1.0 - np.asarray(p, dtype=float))
+    return (np.log10(ri) - fit["b"]) / fit["m"]
+
+
+def p_of_i15(i15, fit):
+    """Annual exceedance probability of a 15-minute intensity."""
+    from firescape import annualprob as ap
+    return ap.annual_probability(ap.recurrence_interval(i15, fit["m"], fit["b"]))
+
+
+def inset_colorbar(ax, mappable, label, *, corner="lower left", pad=0.018,
+                   w=0.30, h=0.086, nticks=5, fontsize=8, twin=None):
+    """A colorbar that sits INSIDE its map, in the corner the panel legends use.
 
     An external colorbar steals width from the axes it is attached to, so the
     one panel carrying one drew a visibly smaller map than its two neighbours
@@ -120,21 +217,50 @@ def inset_colorbar(ax, mappable, label, *, x=0.018, y=0.018, w=0.30,
 
     Sized in axes fractions, which is safe here because all three panels share
     one data extent and are aspect-locked by ``plotting.style_axes``, so their
-    axes boxes are identical.
+    axes boxes are identical. ``corner`` is resolved AFTER the box is sized --
+    a right-hand corner has to know the final width, which ``twin`` grows.
     """
+    # A second scale needs two more rows of type (its ticks and its label)
+    # above the bar, so the box grows and the bar sits lower inside it.
+    if twin is not None:
+        h, w = max(h, 0.160), max(w, 0.36)
+    x, y = mc.corner_xy(corner, (w, h), pad)
     ax.add_patch(Rectangle((x, y), w, h, transform=ax.transAxes,
                            facecolor="white", alpha=0.80, edgecolor="0.8",
                            linewidth=0.8, zorder=11))
     # Horizontal inset leaves room for the extend arrows, which overhang the
     # cax and would otherwise touch the frame.
-    cax = ax.inset_axes([x + 0.045, y + 0.030, w - 0.090, 0.017], zorder=12)
+    bar_h = 0.017
+    bar_y = y + (0.030 if twin is None else 0.062)   # room for a label BELOW
+    cax = ax.inset_axes([x + 0.045, bar_y, w - 0.090, bar_h], zorder=12)
     cb = ax.figure.colorbar(mappable, cax=cax, orientation="horizontal",
                             extend="both")
     cb.outline.set_linewidth(0.6)
     cb.ax.tick_params(labelsize=fontsize, length=2.5, width=0.6, pad=1.5)
     cb.locator = MaxNLocator(nbins=nticks - 1)
     cb.update_ticks()
-    cax.set_title(label, fontsize=fontsize, pad=3.5)
+    if twin is None:
+        cax.set_title(label, fontsize=fontsize, pad=3.5)
+        return cb
+    # The second scale is drawn as its own inset on the SAME parent axes, not
+    # as cax.twiny(): a twin is placed in figure coordinates at the moment it
+    # is made and would drift off the bar as soon as the layout moves (which
+    # it does -- the caption reserves its space last). An inset tracks its
+    # parent, so the two scales stay locked to one another.
+    positions, labels, twin_label = twin
+    tax = ax.inset_axes([x + 0.045, bar_y, w - 0.090, bar_h], zorder=12)
+    tax.set_xlim(cax.get_xlim())
+    tax.patch.set_visible(False)
+    tax.set_yticks([])
+    for sp in tax.spines.values():
+        sp.set_visible(False)
+    tax.xaxis.set_ticks_position("top")
+    tax.xaxis.set_label_position("top")
+    tax.set_xticks(list(positions))
+    tax.set_xticklabels(list(labels))
+    tax.tick_params(axis="x", labelsize=fontsize, length=2.5, width=0.6, pad=1.5)
+    tax.set_title(twin_label, fontsize=fontsize, pad=10.0)
+    cax.set_xlabel(label, fontsize=fontsize, labelpad=1.5)
     return cb
 
 
@@ -145,6 +271,7 @@ if PREFIRE:
     SEV_SCALE = 1.0                      # already x1000
 else:
     meta = json.loads((OBS / "observed_severity_summary.json").read_text())
+    CAL = _CAL_ARG or meta.get("calibration_for_breaks") or CAL
     seg_path = OBS / f"{FIRE.upper()}_segments.gpkg"
     sev_path = OBS / f"{FIRE.lower()}_brisk_dnbr.tif"
     SEV_SCALE = 1000.0                   # BRISK is raw dNBR
@@ -215,6 +342,22 @@ except Exception as exc:                                   # context is a bonus
 P = seg["P_24mmh"].to_numpy()
 T = seg["I15_50"].to_numpy()
 lo, hi = np.percentile(T[np.isfinite(T)], [2, 98])
+# One key placement for all three panels, chosen from the perimeter: pinning
+# every sheet's key to the lower left eventually parks it on the fire (Bug's
+# southwestern lobe reaches into that corner, and 31% of the box would land on
+# the burn). Same corner on all three panels -- a reader who has found the key
+# once should not have to hunt for it again on the panel beside it.
+KEY = mc.clear_corner(tuple(extent), per.geometry, size=(0.36, 0.22))
+print("key corner: " + KEY["loc"] + " · perimeter overlap "
+      + ", ".join(f"{k} {v:.0%}" for k, v in KEY["overlap"].items()), flush=True)
+
+FIT = climatology_fit(seg)
+if FIT is not None:
+    print(f"Atlas 14 (fire median): 1-yr {FIT['i15_1yr_med']:.1f}, "
+          f"50-yr {FIT['i15_50yr_med']:.1f} mm/h · P at the median trigger "
+          f"{FIT['p_at_median_T']:.3f} (5-95% across segments "
+          f"{FIT['p_at_median_T_p05']:.3f}-{FIT['p_at_median_T_p95']:.3f}, "
+          f"±{FIT['p_spread_frac']:.0%})", flush=True)
 PCMAP = ListedColormap(P_COLORS)
 PNORM = BoundaryNorm([0.0, *P_BREAKS, 1.0], PCMAP.N)
 
@@ -243,20 +386,14 @@ for ax, mode in zip(axes, ("severity", "likelihood", "threshold")):
         if blm is not None and len(blm):
             _ctx.append(Patch(facecolor=BLM_FILL, edgecolor=BLM_EDGE,
                               alpha=0.30, label="BLM land"))
-        ax.legend(handles=[Patch(facecolor=np.array(c) / 255.0,
+        ax.legend(handles=[Patch(facecolor=np.array(c) / 255.0, alpha=SEV_ALPHA,
                                  edgecolor="0.3", label=l)
-                           for c, l in zip(burn.BAER_CLASS_COLORS, SEV_LABELS)]
+                           for c, l in zip(burn.BAER_CLASS_COLORS, SEV_LEGEND)]
                           + _ctx,
                   title=f"BARC class (breaks {'/'.join(f'{b/1000:g}' for b in breaks)} dNBR)",
-                  loc="lower left", fontsize=8, title_fontsize=8)
-        ax.set_title(
-            ("Simulated burn severity — pre-fire, no imagery\n"
-             f"every pixel burns at the {meta.get('region','?')} quantile "
-             f"P$_{{dsim}}$ = {meta.get('pdsim','?')}")
-            if PREFIRE else
-            ("Observed burn severity — CIMSS BRISK dNBR\n"
-             f"scene {', '.join(meta['scene_dates'])} · "
-             "vegetation change, not soil burn severity"), fontsize=10.5)
+                  loc=KEY["loc"], fontsize=8, title_fontsize=8)
+        ax.set_title("Simulated burn severity" if PREFIRE else
+                     "Observed burn severity", fontsize=13)
     elif mode == "likelihood":
         # Ascending, so the most likely segments finish on top rather than
         # being overdrawn by a quiet neighbour at a confluence.
@@ -265,41 +402,58 @@ for ax, mode in zip(axes, ("severity", "likelihood", "threshold")):
         ax.legend(handles=[Line2D([0], [0], color=c, lw=3, label=l)
                            for c, l in zip(P_COLORS, P_LABELS)],
                   title=f"P(debris flow) at {DESIGN_I15:g} mm/h",
-                  loc="lower left", fontsize=8, title_fontsize=8)
-        ax.set_title("Debris-flow likelihood at the design storm\n"
-                     f"$I_{{15}}$ = {DESIGN_I15:g} mm/h (≈1-year, 15-minute)",
-                     fontsize=10.5)
+                  loc=KEY["loc"], fontsize=8, title_fontsize=8)
+        ax.set_title("Debris-flow likelihood at the design storm",
+                     fontsize=13)
     else:
         seg.sort_values("I15_50", ascending=False).plot(
             ax=ax, column="I15_50", cmap="plasma_r", linewidth=1.6,
             vmin=lo, vmax=hi, zorder=5, legend=False)
         _sm = ScalarMappable(norm=Normalize(vmin=lo, vmax=hi), cmap="plasma_r")
         _sm.set_array([])
-        inset_colorbar(ax, _sm, "triggering $I_{15}$ (mm/h)")
-        ax.set_title("Rainfall intensity that triggers a debris flow\n"
-                     "inverting the same fit at p = 0.5 · lower = smaller storm",
-                     fontsize=10.5)
+        # Same bar, two readings: how hard it has to rain, and how often it
+        # rains that hard here. Both are properties of the segment under the
+        # colour, so they belong on one ramp -- a second colour ramp would
+        # imply a second field that does not exist.
+        _twin = None
+        if FIT is not None:
+            _pt = [(i15_of_p(q, FIT), f"{q*100:g}%") for q in P_AXIS_TICKS]
+            _pt = [(v, lab) for v, lab in _pt if lo <= v <= hi]
+            # Ticks are evenly spaced in mm/h (the fit is log-linear), so a
+            # wide-range fire like Bug qualifies for all nine and they collide.
+            # Thinning by stride keeps them evenly spaced AND keeps the
+            # sequence decade-like (50/10/2/0.5/0.1%) rather than ragged.
+            if len(_pt) > 5:
+                _pt = _pt[::-(-len(_pt) // 5)]
+            if len(_pt) >= 2:
+                _twin = ([v for v, _ in _pt], [lab for _, lab in _pt],
+                         "annual chance of that intensity")
+        inset_colorbar(ax, _sm, "triggering $I_{15}$ (mm/h)", twin=_twin,
+                       corner=KEY["loc"])
+        ax.set_title("Rainfall intensity that triggers a debris flow",
+                     fontsize=13)
     per.boundary.plot(ax=ax, color="#56B4E9", linewidth=1.8, zorder=6,
                       path_effects=mc.fire_style("current")["path_effects"])
     mc.style_axes(ax, extent, step=0.1)
 
 age = meta.get("composite_age_days")
 if PREFIRE:
-    _kind = "pre-fire debris-flow forecast (simulated severity)"
-    _prov = (f"NO burn-severity imagery exists for this fire — severity is "
-             f"SIMULATED from LANDFIRE vegetation, assuming the whole "
-             f"perimeter burns at the {meta.get('region','?')} calibrated "
-             f"quantile P$_{{dsim}}$ = {meta.get('pdsim','?')}")
-    _caveat = ("Real fires leave unburned islands and a severity mosaic, so "
-               "these are an upper expectation for the footprint, not an "
-               "emergency assessment; the perimeter is today's and an "
-               "uncontained fire grows. Supersede with a BRISK or BAER run "
-               "the moment one lands.")
+    _kind = "Pre-fire debris-flow forecast on simulated severity."
+    _sev = ("severity SIMULATED from LANDFIRE vegetation — no burn-severity "
+            "imagery exists for this fire — with the whole perimeter burning "
+            f"at the {meta.get('region','?')} calibrated quantile "
+            f"P$_{{dsim}}$ = {meta.get('pdsim','?')}")
+    _tail = ("Real fires leave unburned islands and a severity mosaic, so these "
+             "are an upper expectation for the footprint, not an emergency "
+             "assessment; the perimeter is today's and an uncontained fire "
+             "grows. Supersede with a BRISK or BAER run the moment one lands.")
 else:
-    _kind = "post-fire debris-flow hazard on observed severity"
-    _prov = (f"BRISK composite {', '.join(meta['scene_dates'])}, {age} d old — "
-             f"{meta.get('magnitude_caveat','')}")
-    _caveat = ""
+    _kind = "Post-fire debris-flow hazard on the severity BRISK measured."
+    _sev = (f"burn severity from the CIMSS BRISK dNBR composite of "
+            f"{', '.join(meta['scene_dates'])}, which maps vegetation change "
+            "rather than soil burn severity")
+    _tail = (f"The composite is {age} d old — {meta.get('magnitude_caveat', '')}."
+             ).replace(" — .", ".")
 
 # Class fractions computed from the SAME array the map paints, at the SAME
 # breaks. The summary JSON also carries a class_fraction, but it is BRISK's
@@ -318,19 +472,34 @@ frac = {lab: float((_idx == i).mean()) for i, lab in enumerate(SEV_LABELS)}
 modhigh = frac["moderate"] + frac["high"]
 print("BARC class fractions on the display grid: "
       + ", ".join(f"{k} {v:.1%}" for k, v in frac.items()), flush=True)
-fig.suptitle(
-    f"{FIRE} fire — {_kind} · "
-    f"{len(seg):,} segments · {CAL} calibration, {meta.get('region','?')}\n"
-    f"median P at {DESIGN_I15:g} mm/h = {np.nanmedian(P):.2f} · "
-    f"{int((P >= 0.5).sum()):,} segments at or above 50% · "
-    f"median triggering $I_{{15}}$ {np.nanmedian(T):.1f} mm/h "
-    f"(5–95%: {np.nanpercentile(T, 5):.0f}–{np.nanpercentile(T, 95):.0f})\n"
-    f"{_prov}; {modhigh:.0%} of pixels moderate or high at these breaks"
-    + (f"\n{_caveat}" if _caveat else ""),
-    y=0.985, fontsize=12)
+_blm_txt = ("" if BLM_FRAC is None else
+            "; tan wash BLM-administered land (none inside the perimeter)"
+            if BLM_FRAC < 0.005 else
+            f"; tan wash BLM-administered land ({BLM_FRAC:.0%} of the perimeter)")
+_clim_txt = (
+    "; the upper scale on its colour bar converts that intensity to the annual "
+    "chance of such a storm, from the fire-median NOAA Atlas 14 15-minute "
+    f"intensity–frequency fit (per-segment fits shift it by ±"
+    f"{FIT['p_spread_frac']:.0%} of its value)" if FIT is not None else "")
+CAPTION = (
+    f"{_kind} {len(seg):,} stream segments; {CAL} calibration, "
+    f"{meta.get('region', '?')} region. "
+    f"Left: {_sev}, binned at that region's calibrated BARC breaks "
+    f"({'/'.join(f'{b/1000:g}' for b in breaks)} dNBR); {modhigh:.0%} of pixels "
+    "burned moderate or high. "
+    "Middle: modelled likelihood of a debris flow (USGS M1) under the design "
+    f"storm, $I_{{15}}$ = {DESIGN_I15:g} mm/h (≈1-year, 15-minute) — median "
+    f"{np.nanmedian(P):.2f}, {int((P >= 0.5).sum()):,} segments at or above 50%. "
+    "Right: the 15-minute intensity at which that same fit reaches 50% "
+    f"likelihood (median {np.nanmedian(T):.1f} mm/h, 5–95% "
+    f"{np.nanpercentile(T, 5):.0f}–{np.nanpercentile(T, 95):.0f}), so a low "
+    f"value is a channel segment that responds to a small storm{_clim_txt}. "
+    f"Hillshade 3DEP 1/3-arcsec{_blm_txt}. {_tail}")
 
-
-fig.subplots_adjust(top=0.90, bottom=0.06, left=0.03, right=0.97)
+# Margins first, then the caption: it is wrapped to where the panels
+# actually are, and it grows the bottom margin to fit itself.
+fig.subplots_adjust(top=0.945, bottom=0.055, left=0.03, right=0.97)
+mc.caption(fig, CAPTION, label=f"{FIRE} fire.", fontsize=10)
 mc.save(fig, f"{FIRE.lower()}_{'prefire' if PREFIRE else 'postfire'}_hazard")
 plt.close(fig)
 
@@ -351,9 +520,23 @@ summary = {
                    "p05": round(float(np.nanpercentile(T, 5)), 1),
                    "p95": round(float(np.nanpercentile(T, 95)), 1),
                    "n_below_design": int((T < DESIGN_I15).sum())},
+    "key_corner": KEY["loc"],
+    "key_corner_overlap": {k: round(v, 3) for k, v in KEY["overlap"].items()},
     "blm_fraction_of_perimeter": (round(BLM_FRAC, 4)
                                   if BLM_FRAC is not None else None),
     "class_fraction_barc": {k: round(v, 4) for k, v in frac.items()},
+    "annual_exceedance": (None if FIT is None else {
+        "source": "NOAA Atlas 14 sw, 15-min, 1-yr & 50-yr (interim/statewide)",
+        "fit": "fire-median log10(RI) = m*I15 + b",
+        "m": round(FIT["m"], 5), "b": round(FIT["b"], 4),
+        "i15_1yr_mmh": round(FIT["i15_1yr_med"], 1),
+        "i15_50yr_mmh": round(FIT["i15_50yr_med"], 1),
+        "P_at_median_threshold": round(FIT["p_at_median_T"], 4),
+        "P_at_median_threshold_p05_p95": [round(FIT["p_at_median_T_p05"], 4),
+                                          round(FIT["p_at_median_T_p95"], 4)],
+        "segment_coverage": round(FIT["covered"], 3),
+    }),
+    "caption": CAPTION,
     "class_fraction_brisk_usgs_scheme": meta.get("class_fraction", {}),
 }
 (OBS / f"{'prefire' if PREFIRE else 'postfire'}_hazard_summary.json"
