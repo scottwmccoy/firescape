@@ -216,7 +216,13 @@ def classify_barc4(dnbr: np.ndarray, breaks: tuple[float, float, float]) -> np.n
     """Classify dNBR(x1000) into BARC4 classes (1=unburned/very low ... 4=high).
 
     ``breaks`` are the (unburned-low, low-moderate, moderate-high) thresholds.
-    NaN maps to 0 (nodata). Matches pfdf.severity.classification numbering.
+    NaN maps to 0 (nodata). Matches pfdf.severity.classification numbering but
+    NOT its boundary convention: here a value exactly at a break goes to the
+    more-burned class (>=), while pfdf.severity.estimate puts it in the
+    less-burned class (threshold = inclusive upper bound). Irrelevant for
+    continuous simulated dNBR; on integer rasters (MTBS) the two differ on
+    ~0.4% of pixels. The calibration's class decomposition (D >= break) uses
+    this function's convention.
     """
     t1, t2, t3 = breaks
     if not (t1 < t2 < t3):

@@ -151,6 +151,11 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
             return {name: load_cached(event_id, tag, name) for name in cdf_tables}
 
     low_t, mod_t = thresholds
+    # MTBS sentinel guard: low_t of 0 or 9999 means "no analyst threshold",
+    # not a threshold of 0 -- without this the basin selection below
+    # (med_dnbr >= low_t) admits every unburned basin. Fall back to the
+    # standard USGS unburned-low break.
+    low_eff = low_t if 0.0 < low_t < 2000.0 else 125.0
     cache = _cache_dir(event_id, tag)
     tables = dict(cdf_tables) if multi else {"default": severity.load_cdf_table()}
     cdf = next(iter(tables.values()))
@@ -213,7 +218,7 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
         except Exception:
             med_dnbr = np.asarray(segments.scaled_dnbr(dnbr), dtype=float) * 1000.0  # mean fallback
         sel = ((area <= FilterDefaults().max_area_km2) & (ratio_in >= 0.75)
-               & (med_dnbr >= low_t) & np.isfinite(T_obs) & np.isfinite(F_obs))
+               & (med_dnbr >= low_eff) & np.isfinite(T_obs) & np.isfinite(F_obs))
 
         # ---- simulated side: class decomposition -------------------------------
         if evt is None:
@@ -246,7 +251,7 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
         k = int(np.argmin(np.abs(PDSIM_GRID - 0.5)))
         sim_dnbr05, _src = severity.simulate_dnbr(evt_vals, 0.5, cdf, evt_nodata=OUTSIDE_CODE)
         sim_dnbr05 = np.where(perim_arr, sim_dnbr05, 0.0).astype(np.float32)
-        barc05 = severity.classify_barc4(sim_dnbr05, (low_t if 0 < low_t < mod_t else 125.0,
+        barc05 = severity.classify_barc4(sim_dnbr05, (low_eff if low_eff < regional_break else 125.0,
                                                       regional_break, 5000.0))
         barc05[~perim_arr] = 1
         Tv, Fv, _ = s17.M1.variables(

@@ -29,7 +29,11 @@ TABLES = {"staley2018": severity.load_cdf_table(),
 
 df = pd.read_csv(SET)
 use = df[df["include"]].copy()
-breaks = use.groupby("region")["mod_t"].median()
+# mod_t=9999 = MTBS "no threshold" sentinel; keep it out of the break
+# median (it inflated v1/v1_1/v1_2: central 325->307.5, mojave 388->345,
+# northern 355->317.5). Sentinel fires stay in the P_dsim pool.
+breaks = (use[(use["mod_t"] > 0) & (use["mod_t"] < 2000)]
+          .groupby("region")["mod_t"].median())
 print("per-region low-moderate breaks (median analyst mod_t):")
 print(breaks.round(0).to_string(), flush=True)
 

@@ -44,7 +44,11 @@ print(fires["incid_type"].value_counts().to_string())
 
 big = fires[(fires["km2"] >= MIN_KM2)
             & fires["incid_type"].isin(["Wildfire", "Unknown"])].copy()
-big["thresholds_ok"] = big["mod_t"].fillna(0) > 0
+# mod_t=9999 is the MTBS "no analyst threshold" sentinel. Such fires still
+# calibrate P_dsim (their observed classes come from dnbr6, not mod_t) but
+# must stay OUT of the regional break median -- Rossi's rule is a median
+# of real analyst thresholds. thresholds_ok gates the break median only.
+big["thresholds_ok"] = (big["mod_t"].fillna(0) > 0) & (big["mod_t"].fillna(9999) < 2000)
 # newest LFPS vintage strictly predating ignition; the catalog holds only
 # LF2016/LF2022/LF2023/LF2024/LF2025 (no LF2020), so 2017-2022 pair with
 # LF2016 (up to 6-yr veg lag for 2021-22 fires - documented caveat)
@@ -53,7 +57,7 @@ big["evt_vintage"] = np.select(
     ["LF2016_EVT", "LF2022_EVT"], default="LF2023_EVT")
 have = {p.name for p in (paths.raw_dir("mtbs", "fires")).iterdir() if p.is_dir()}
 big["have_bundle"] = big["event_id"].isin(have)
-big["include"] = big["thresholds_ok"]
+big["include"] = big["mod_t"].fillna(0) > 0   # as-run membership (see above)
 
 cent = big.geometry.centroid
 big["lon"], big["lat"] = cent.x.round(4), cent.y.round(4)

@@ -6,7 +6,7 @@
 # breaks = per-region median analyst mod_t (Rossi 2025 rule).
 
 [meta]
-name = "statewide_v1_1"
+name = "statewide_v1_2"
 created = 2026-08-14
 method = "rossi2025-dfl-calibration (logit-space, per-region, DISPERSED severity sigma=0.91)"
 cdf_source = "nv_statewide (Staley 2018 + Nevada era-matched refit)"
