@@ -87,8 +87,18 @@ hit = reg.loc[reg.contains(pt), "region"]
 region = str(hit.iloc[0]) if len(hit) else "Central Basin and Range"
 slug = region.lower().replace(" ", "_").replace("&", "and")
 cal = config.packaged_calibration(CAL).region(slug)
-low, mod = cal.barc_breaks[0], cal.barc_breaks[1]
-breaks = [low, (low + mod) / 2.0, mod]     # unburned/low/moderate/high, x1000
+# cal.barc_breaks IS the BARC4 threshold triple already -- config.py,
+# severity.classify_barc4 and calibrate.py all define it as
+# (unburned-low, low-moderate, moderate-high), and calibrate writes it as
+# [125, break_lowmod, 500]. This line used to rebuild it as
+# [low, (low+mod)/2, mod], which treats the *low-moderate* break as if it were
+# moderate-high and invents a low-moderate at the midpoint. That drops the
+# boundary M1 actually pools on (moderate+high) from 325 to 225 x1000 and
+# inflated the moderate-or-high burned area 1.9x on Hawk, 2.4x on Stallion and
+# 4.7x on Bug -- straight into the F term, so every observed likelihood ran
+# high. The pre-fire path (prefire.run_unit) always passed it through
+# unchanged; this is now consistent with it.
+breaks = list(cal.barc_breaks)             # unburned/low/moderate/high, x1000
 print(f"{region}: BARC breaks {breaks} (x1000 dNBR)", flush=True)
 
 b5070 = tuple(per.to_crs("EPSG:5070").total_bounds)
