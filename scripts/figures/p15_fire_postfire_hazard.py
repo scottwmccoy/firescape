@@ -452,8 +452,10 @@ else:
     _sev = (f"burn severity from the CIMSS BRISK dNBR composite of "
             f"{', '.join(meta['scene_dates'])}, which maps vegetation change "
             "rather than soil burn severity")
-    _tail = (f"The composite is {age} d old — {meta.get('magnitude_caveat', '')}."
-             ).replace(" — .", ".")
+    _stale = ("posted today" if age == 0 else
+              f"{age} d old" if age is not None else "of unknown age")
+    _tail = (f"The composite is {_stale}; {meta.get('magnitude_caveat', '')}."
+             ).replace("; .", ".")
 
 # Class fractions computed from the SAME array the map paints, at the SAME
 # breaks. The summary JSON also carries a class_fraction, but it is BRISK's

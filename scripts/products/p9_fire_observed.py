@@ -112,18 +112,32 @@ result = assess.run_observed(
     perimeter=per.to_crs(dem.crs), dnbr=str(dnbr_x1000), barc_breaks=breaks)
 print(f"{result.get('n_segments', 'n/a')} segments -> {OUT}", flush=True)
 
-# Age from the scene itself, not a constant: the first run happened to be a
-# day old and the 1 got frozen into every summary written since, including
-# ones fetched days later. Age is the whole basis for trusting the magnitude.
+# TWO clocks, and they are not the same one. ``composite_age_days`` is how
+# stale the file is (scene date -> today); ``burn_age_days`` is how long the
+# burn had been observed when the scene was made (BRISK's own age_days, from
+# the fire's first appearance in its listing). MATURITY_DAYS is measured on
+# the SECOND: a composite posted this morning can be a 2-day-old burn or a
+# 2-month-old one. Keying the caveat to staleness -- as this did until
+# 2026-09-01 -- read "0 d old, magnitude may still rise" over a scene that
+# was 10 days into the burn, and would have called a fully mature fire
+# immature the day its composite refreshed.
 _scenes = [dt.date.fromisoformat(str(s)[:10]) for s in meta["scene_dates"]]
 _age = (dt.date.today() - max(_scenes)).days
+_burn_age = max(meta.get("scene_age_days") or [-1])
 
 summary = {"fire": FIRE, "severity_source": "CIMSS BRISK",
            "scene_dates": meta["scene_dates"],
            "composite_age_days": _age,
+           "burn_age_days": None if _burn_age < 0 else _burn_age,
            "magnitude_caveat": (
-               "under BRISK's ~14 d maturity mark: pattern reliable, magnitude "
-               "may still rise" if _age < 14 else "past BRISK's ~14 d mark"),
+               f"the burn was {_burn_age} d old in BRISK when this composite "
+               "was made, under its ~14 d maturity mark: pattern reliable, "
+               "magnitude may still move"
+               if 0 <= _burn_age < 14 else
+               f"the burn was {_burn_age} d old in BRISK when this composite "
+               "was made, past its ~14 d maturity mark"
+               if _burn_age >= 14 else
+               "BRISK reported no burn age for this composite"),
            "class_fraction": meta.get("class_fraction", {}),
            "barc_breaks_x1000": breaks, "region": region,
            "calibration_for_breaks": CAL}
