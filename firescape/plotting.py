@@ -527,9 +527,15 @@ def _mathbold(text: str) -> str:
     The caption is wrapped by :func:`wrap_text`, which splits on whitespace --
     so a bold lead-in has to contain none. Mathtext's ``\;`` is a space that
     ``textwrap`` cannot see, which keeps the whole label as one token.
+
+    A bare ``-`` inside mathtext is not a hyphen -- it is the binary-operator
+    minus, and mathtext gives it operator spacing on both sides ("debris-flow"
+    label became "debris − flow"). Swapped for U+2011 (non-breaking hyphen),
+    a different character mathtext has no operator rule for, so it just draws
+    the glyph.
     """
     safe = (text.replace("\\", "").replace("$", "").replace("_", r"\_")
-                .replace("%", r"\%"))
+                .replace("%", r"\%").replace("-", "‑"))
     return r"$\mathbf{" + safe.replace(" ", r"\;") + "}$"
 
 

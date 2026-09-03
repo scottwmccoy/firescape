@@ -145,6 +145,20 @@ ZOOMS = {
         blurb="the Idaho border country -- Jarbidge, Mountain City, Owyhee "
               "and Jackpot -- with the Independence, Bull Run and Jarbidge "
               "mountains"),
+    # Added 2026-09-03 for the same reason as hidden_valley: 19 of the 55
+    # points in the statewide debris-flow inventory (nv_debrisflow_inventory,
+    # a hand-digitized Google Earth record, not modelled output) sit on this
+    # one range front, from two separate storms 9 months apart (27 Sep 2023,
+    # 13 Jun 2024) -- more observed flows than any other window in this file
+    # covers, and none of the existing ones reach it. Closed basin: no named
+    # river drains it.
+    "railroad_valley": dict(
+        bounds=(-115.85, 38.00, -115.32, 38.49), step=0.1, res=0.0004,
+        rivers=(), lakes=(),
+        label="Railroad Valley range front",
+        blurb="the Quinn Canyon / Golden Gate range front above Railroad "
+              "Valley, Nye County -- Adaven, Nyala and Crows Nest are the "
+              "nearest named places"),
 }
 
 #: Places to label even though GNIS does not call them incorporated. Minden,
@@ -186,6 +200,9 @@ NOTABLE = {
     # Carlin-Elko-Wells window already covers.
     "Jarbidge", "Mountain City", "Owyhee", "Jackpot", "Contact", "Charleston",
     "Rowland", "Murphy Hot Springs", "North Fork", "Deeth",
+    # Railroad Valley: nothing here is incorporated, or close to it -- the
+    # nearest named GNIS place to the debris-flow cluster is 14 km away.
+    "Adaven", "Nyala", "Crows Nest", "Currant", "Lockes",
 }
 _PREFIX = ("City of ", "Town of ", "Village of ", "Township of ")
 

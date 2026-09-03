@@ -24,6 +24,15 @@ laid side by side and any difference between them is a difference in the data.
 Segment collections are drawn ``rasterized=True``: at 600k lines a vector PDF
 would be several hundred megabytes to no purpose, since each segment is a few
 pixels long at print scale. Labels, boundaries and axes stay vector.
+
+**Observed points, where there are any.** If ``raw/debrisflow_inventory/
+nv_debrisflow_inventory.geojson`` exists and any of its points fall inside a
+window, they're drawn on top of both panels -- a hand-digitized record next
+to the model's own prediction for the same ground, which is the only check
+this sheet can offer against something that actually happened. Silently
+absent from any window with none: this is not what the sheet is for, only
+what it can also show when the data lines up with a window that already
+exists for other reasons.
 """
 import json
 import sys
@@ -47,6 +56,22 @@ import geopandas as gpd
 
 import _corridors as cor
 from firescape import hazard as hz, paths, plotting as mc
+
+#: Marker distinct from everything else on the sheet: not the black/white
+#: city dot, not in the green/orange/red hazard ramp or the plasma_r
+#: threshold ramp. "other_process" (avalanche, flood -- 3 of 55 points
+#: statewide) gets an open version of the same marker, not a different one:
+#: the inventory's own categories are informal field labels, not a
+#: validated taxonomy, and a second shape would overstate the distinction.
+INVENTORY_PATH = paths.raw_dir("debrisflow_inventory") / "nv_debrisflow_inventory.geojson"
+
+
+def inventory_in(bounds):
+    if not INVENTORY_PATH.exists():
+        return None
+    pts = gpd.read_file(INVENTORY_PATH)
+    return pts[pts.within(box(*bounds))]
+
 
 VERSION = sys.argv[2] if len(sys.argv) > 2 else "statewide_v1_2"
 name = sys.argv[1] if len(sys.argv) > 1 else None
@@ -138,6 +163,13 @@ for key in todo:
     seg = segments_in(bounds)
     print(f"{len(seg):,} segments in the window", flush=True)
 
+    inv = inventory_in(bounds)
+    if inv is not None and len(inv):
+        print(f"{len(inv)} observed-inventory point(s) in the window "
+              f"({int((inv['category'] == 'debris_flow').sum())} debris flow, "
+              f"{int((inv['category'] != 'debris_flow').sum())} other process)",
+              flush=True)
+
     # Same gap fill and same recomputation as the statewide merge.
     S = seg["Soil_M1"].to_numpy().copy()
     gap = ~np.isfinite(S)
@@ -220,9 +252,33 @@ for key in todo:
             cb.set_label("combined hazard class (Cannon et al. 2010)")
             ax.set_title("Combined hazard class at the 24 mm/h reference storm\n"
                          "(≈1-year, 15-minute intensity)", fontsize=10.5)
-        cor.decorate(ax, C, extent, step=z["step"], extra_handles=(
-            [Line2D([0], [0], color=UNSUPPORTED, lw=1.4,
-                    label="no model input (see note)")] if len(uns) else []))
+        # White, not a "safe" accent colour: plasma_r's own low end is
+        # bright yellow (the threshold panel's MOST dangerous channels), and
+        # the hazard panel already spends green/orange/red -- there is no
+        # hue left unclaimed by one panel or the other. White collides with
+        # neither ramp and reads against both.
+        extra = [Line2D([0], [0], color=UNSUPPORTED, lw=1.4,
+                       label="no model input (see note)")] if len(uns) else []
+        if inv is not None and len(inv):
+            extra.append(Line2D([0], [0], marker="^", color="none",
+                                markerfacecolor="white", markeredgecolor="black",
+                                markersize=8, label="observed (inventory)"))
+        cor.decorate(ax, C, extent, step=z["step"], extra_handles=extra)
+        if inv is not None and len(inv):
+            # Above everything decorate() just drew, including place labels:
+            # these 1-55 points are the reason this particular run exists, and
+            # a label halo hiding one would defeat that. Open triangles for
+            # "other_process" (avalanche/flood) -- see the module docstring.
+            df_pts = inv[inv["category"] == "debris_flow"]
+            other_pts = inv[inv["category"] != "debris_flow"]
+            if len(df_pts):
+                ax.scatter(df_pts.geometry.x, df_pts.geometry.y, marker="^",
+                          s=70, facecolor="white", edgecolor="black",
+                          linewidth=0.9, zorder=9.6)
+            if len(other_pts):
+                ax.scatter(other_pts.geometry.x, other_pts.geometry.y, marker="^",
+                          s=70, facecolor="none", edgecolor="black",
+                          linewidth=1.1, zorder=9.6)
 
     q = np.nanpercentile(thr, [5, 95])
     fig.tight_layout(w_pad=0.4)

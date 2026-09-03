@@ -403,3 +403,15 @@ def test_caption_reserves_space_below_the_axes():
         fig.dpi_scale_trans.inverted()).y0            # and cleared the labels
     assert art.get_text().startswith(r"$\mathbf{Figure\;1.}$")
     plt.close(fig)
+
+
+def test_caption_label_hyphen_is_not_a_minus_sign():
+    # A bare "-" in mathtext is the binary-operator minus and gets spaced
+    # like one ("debris-flow" -> "debris - flow"); the label must swap it
+    # for a character mathtext has no operator rule for.
+    fig, ax = plt.subplots(figsize=(6, 4), dpi=100)
+    ax.plot([0, 1], [0, 1])
+    art = plotting.caption(fig, "text", label="debris-flow inventory.")
+    assert "-" not in art.get_text()
+    assert "‑" in art.get_text()
+    plt.close(fig)
