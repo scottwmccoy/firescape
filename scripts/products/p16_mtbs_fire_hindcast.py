@@ -28,6 +28,7 @@ flow occurred -- not a measurement of it.
 """
 import json
 import pathlib
+import re
 import sys
 import warnings
 
@@ -78,23 +79,34 @@ MATCH_MAX_M = 500.0
 POINT_PAD_M = 2000.0
 
 
-def product_source(bundle):
-    """MTBS or BAER? The download portal serves both and the bundle does not
-    say which in its keys -- but its filenames do.
+def fire_identity(perim_gdf, bundle):
+    """Fire name, mapping programme and assessment type, from the bundle.
 
-    Not cosmetic: a fire from the last year or two is usually too recent for
-    MTBS (1-2 season lag) and comes back as the BAER rapid assessment
-    instead, which is a different product from a different sensor pass with
-    its own severity conventions. Broom Canyon (2024) is BAER; the 2004-2014
-    fires in this set are MTBS. Labelling a sheet "MTBS" over a BAER raster
-    would be a straight misattribution.
+    The burn-area shapefile carries all three as attributes (``INCID_NAME``,
+    ``MAP_PROG``, ``ASMNT_TYPE``), which beats inferring the programme from
+    the filename: it is the product's own statement about itself. Worth
+    carrying, because a fire from the last season or two is usually too
+    recent for MTBS's 1-2 year lag and comes back as the BAER emergency
+    assessment instead -- a different product, from a different pass, with
+    its own conventions. Broom Canyon (2024) is BAER/Emergency; the 2004-2014
+    fires here are MTBS/Extended.
     """
+    def field(name, default):
+        if name in perim_gdf.columns and perim_gdf[name].notna().any():
+            return str(perim_gdf[name].dropna().iloc[0])
+        return default
+
     stem = pathlib.Path(bundle["dnbr"]).name.lower()
-    if stem.startswith("baer_"):
-        return "BAER"
-    if stem.startswith("mtbs_"):
-        return "MTBS"
-    return "unknown-source"
+    fallback = "BAER" if stem.startswith("baer_") else (
+        "MTBS" if stem.startswith("mtbs_") else "unknown-source")
+    return (field("INCID_NAME", "unnamed").title(),
+            field("MAP_PROG", fallback),
+            field("ASMNT_TYPE", "unknown"))
+
+
+def name_slug(fire_name):
+    """File-safe stem from a fire name -- what a person actually references."""
+    return re.sub(r"[^a-z0-9]+", "_", fire_name.lower()).strip("_")
 
 
 def region_breaks(perim_gdf, cal_name):
@@ -132,7 +144,7 @@ def run_one(event_id, cal_name):
     region, breaks = region_breaks(perim, cal_name)
     print(f"\n=== {event_id} · {region} · breaks {breaks} ===", flush=True)
 
-    source = product_source(bundle)
+    fire_name, source, asmnt = fire_identity(perim, bundle)
     ig = pd.Timestamp(mtbs_ig_date(event_id))
     pts = gpd.read_file(INVENTORY).to_crs(perim.crs)
     pts["obs_date"] = pd.to_datetime(pts["obs_date"], errors="coerce")
@@ -146,7 +158,7 @@ def run_one(event_id, cal_name):
     usable = in_window.drop(index=predates.index)
     inside = usable[usable.within(perim_u)]
     near = usable.drop(index=inside.index)
-    print(f"{source} bundle · ignition {ig.date()}", flush=True)
+    print(f"{fire_name} · {source} {asmnt} assessment · ignition {ig.date()}", flush=True)
     print(f"{len(inside)} inventory point(s) inside the perimeter, "
           f"{len(near)} within {POINT_PAD_M:.0f} m of it"
           + (f"; {len(predates)} dropped as pre-dating the fire" if len(predates) else ""),
@@ -237,9 +249,11 @@ def run_one(event_id, cal_name):
                 vmin=lo, vmax=hi, zorder=5, legend=False)
             sm = ScalarMappable(norm=Normalize(vmin=lo, vmax=hi), cmap="plasma_r")
             sm.set_array([])
-            cb = fig.colorbar(sm, ax=ax, shrink=0.5, pad=0.02, extend="both")
-            cb.set_label("triggering $I_{15}$ (mm/h)", fontsize=9)
-            cb.ax.tick_params(labelsize=8)
+            # Inset, not attached: an external colourbar steals width from
+            # this panel alone and the three maps stop being the same size,
+            # which is the one thing a reader compares them by.
+            mc.inset_colorbar(ax, sm, "triggering $I_{15}$ (mm/h)",
+                              corner=key["loc"])
             ax.set_title("Rainfall intensity that triggers a debris flow", fontsize=12)
         per4326.boundary.plot(ax=ax, color="#56B4E9", linewidth=1.8, zorder=6,
                               path_effects=mc.fire_style("current")["path_effects"])
@@ -265,7 +279,8 @@ def run_one(event_id, cal_name):
 
     fig.subplots_adjust(top=0.94, bottom=0.05, left=0.03, right=0.97)
     mc.caption(fig, (
-        f"{source} dNBR for this fire, classified at the {region} calibrated break "
+        f"{source} {asmnt.lower()} assessment dNBR ({event_id}), classified at the "
+        f"{region} calibrated break "
         f"({'/'.join(f'{b/1000:g}' for b in breaks)} dNBR), run through the same hazard chain "
         f"as the operational sheets: {len(seg):,} stream segments, {modhigh:.0%} of the burned "
         f"area moderate or high. Left: burn severity. Middle: modelled debris-flow likelihood at the "
@@ -277,12 +292,14 @@ def run_one(event_id, cal_name):
         f"ignition of {ig.date()}. Those dates are when a flow was VISIBLE in imagery, not when it "
         f"happened, so they bound the post-fire lag from above rather than measuring it. Every "
         f"panel is a prediction conditional on this burn; the triangles are the only observation."
-    ), label=f"{event_id}.", fontsize=9.5)
-    mc.save(fig, f"hindcast_{event_id.lower()}_{cal_name}")
+    ), label=f"{fire_name} fire, {ig.year}.", fontsize=9.5)
+    mc.save(fig, f"hindcast_{name_slug(fire_name)}_{cal_name}")
     plt.close(fig)
 
     summary = {
-        "event_id": event_id, "calibration": cal_name, "region": region,
+        "event_id": event_id, "fire_name": fire_name,
+        "map_prog": source, "assessment_type": asmnt,
+        "calibration": cal_name, "region": region,
         "barc_breaks_x1000": breaks, "segments": int(len(seg)),
         "ignition_date": str(ig.date()),
         "severity_source": f"{source} dnbr.tif classified at the calibrated regional break",

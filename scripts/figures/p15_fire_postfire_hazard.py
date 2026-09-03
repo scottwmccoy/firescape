@@ -59,8 +59,7 @@ import rasterio
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import BoundaryNorm, ListedColormap, Normalize
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch, Rectangle
-from matplotlib.ticker import MaxNLocator
+from matplotlib.patches import Patch
 from rasterio.warp import Resampling, reproject
 
 import geopandas as gpd
@@ -205,63 +204,9 @@ def p_of_i15(i15, fit):
     return ap.annual_probability(ap.recurrence_interval(i15, fit["m"], fit["b"]))
 
 
-def inset_colorbar(ax, mappable, label, *, corner="lower left", pad=0.018,
-                   w=0.30, h=0.086, nticks=5, fontsize=8, twin=None):
-    """A colorbar that sits INSIDE its map, in the corner the panel legends use.
-
-    An external colorbar steals width from the axes it is attached to, so the
-    one panel carrying one drew a visibly smaller map than its two neighbours
-    -- the same ground at two different scales on one sheet, which invites the
-    eye to read a difference that is not in the data. Insetting keeps every map
-    box identical and puts the key where a reader is already looking for it.
-
-    Sized in axes fractions, which is safe here because all three panels share
-    one data extent and are aspect-locked by ``plotting.style_axes``, so their
-    axes boxes are identical. ``corner`` is resolved AFTER the box is sized --
-    a right-hand corner has to know the final width, which ``twin`` grows.
-    """
-    # A second scale needs two more rows of type (its ticks and its label)
-    # above the bar, so the box grows and the bar sits lower inside it.
-    if twin is not None:
-        h, w = max(h, 0.160), max(w, 0.36)
-    x, y = mc.corner_xy(corner, (w, h), pad)
-    ax.add_patch(Rectangle((x, y), w, h, transform=ax.transAxes,
-                           facecolor="white", alpha=0.80, edgecolor="0.8",
-                           linewidth=0.8, zorder=11))
-    # Horizontal inset leaves room for the extend arrows, which overhang the
-    # cax and would otherwise touch the frame.
-    bar_h = 0.017
-    bar_y = y + (0.030 if twin is None else 0.062)   # room for a label BELOW
-    cax = ax.inset_axes([x + 0.045, bar_y, w - 0.090, bar_h], zorder=12)
-    cb = ax.figure.colorbar(mappable, cax=cax, orientation="horizontal",
-                            extend="both")
-    cb.outline.set_linewidth(0.6)
-    cb.ax.tick_params(labelsize=fontsize, length=2.5, width=0.6, pad=1.5)
-    cb.locator = MaxNLocator(nbins=nticks - 1)
-    cb.update_ticks()
-    if twin is None:
-        cax.set_title(label, fontsize=fontsize, pad=3.5)
-        return cb
-    # The second scale is drawn as its own inset on the SAME parent axes, not
-    # as cax.twiny(): a twin is placed in figure coordinates at the moment it
-    # is made and would drift off the bar as soon as the layout moves (which
-    # it does -- the caption reserves its space last). An inset tracks its
-    # parent, so the two scales stay locked to one another.
-    positions, labels, twin_label = twin
-    tax = ax.inset_axes([x + 0.045, bar_y, w - 0.090, bar_h], zorder=12)
-    tax.set_xlim(cax.get_xlim())
-    tax.patch.set_visible(False)
-    tax.set_yticks([])
-    for sp in tax.spines.values():
-        sp.set_visible(False)
-    tax.xaxis.set_ticks_position("top")
-    tax.xaxis.set_label_position("top")
-    tax.set_xticks(list(positions))
-    tax.set_xticklabels(list(labels))
-    tax.tick_params(axis="x", labelsize=fontsize, length=2.5, width=0.6, pad=1.5)
-    tax.set_title(twin_label, fontsize=fontsize, pad=10.0)
-    cax.set_xlabel(label, fontsize=fontsize, labelpad=1.5)
-    return cb
+# inset_colorbar now lives in firescape.plotting -- the hindcast sheets
+# (p16_mtbs_fire_hindcast) need the same one, and two copies would drift.
+inset_colorbar = mc.inset_colorbar
 
 
 if PREFIRE:
