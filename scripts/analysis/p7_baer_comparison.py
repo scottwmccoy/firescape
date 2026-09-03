@@ -77,7 +77,12 @@ for i, row in fs.iterrows():
 perims = gpd.GeoDataFrame(perim_rows, geometry="geometry", crs="EPSG:4326").set_index("event_id")
 print(f"{len(perims)} perimeters loaded locally", flush=True)
 
-match = baer.match_perimeters(perims, min_frac=0.90)
+# Year-aligned (see baer.match_perimeters): spatial overlap alone matched 29
+# of 140 CA fires to another fire's assessment. Nevada happens to be clean --
+# all 19 matches are same-year -- but the join has to be correct by rule, not
+# by luck.
+_years = fs.set_index("event_id")["ig_year"].reindex(perims.index)
+match = baer.match_perimeters(perims, min_frac=0.90, fire_years=_years)
 match = match.join(fs.set_index("event_id"), how="left")
 print(f"{len(match)} clean BAER SBS matches "
       f"({match.index.to_series().str[:2].value_counts().to_dict()})", flush=True)
@@ -92,7 +97,7 @@ for event_id, f in match.iterrows():
 
     baer_cls = baer.fetch_aligned((bounds.left, bounds.bottom, bounds.right, bounds.top),
                                   dnbr.shape, crs_epsg)
-    valid = (dnbr != nodata) & np.isfinite(dnbr) & (baer_cls >= 1) & (baer_cls <= 4)
+    valid = severity.valid_dnbr(dnbr, nodata) & (baer_cls >= 1) & (baer_cls <= 4)
     if valid.sum() < 200:
         print(f"{f['incid_name']:16s} SKIP -- only {int(valid.sum())} jointly-valid px", flush=True)
         continue

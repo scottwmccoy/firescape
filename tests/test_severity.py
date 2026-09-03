@@ -232,3 +232,26 @@ class TestConfusionKappa:
         a = rng.integers(1, 5, size=20000)
         b = rng.integers(1, 5, size=20000)
         assert abs(severity.confusion_kappa(a, b)) < 0.03
+
+
+class TestValidDnbr:
+    """The declared nodata is not trustworthy on its own -- see the CA
+    RED SALMON COMPLEX / RED rasters, which declare 0 and fill with -32768."""
+
+    def test_excludes_a_fill_the_raster_never_declared(self):
+        dnbr = np.array([100.0, 250.0, -32768.0, 0.0])
+        ok = severity.valid_dnbr(dnbr, nodata=0.0)
+        assert ok.tolist() == [True, True, False, False]
+
+    def test_excludes_declared_nodata_too(self):
+        dnbr = np.array([100.0, -9999.0, 300.0])
+        assert severity.valid_dnbr(dnbr, nodata=-9999.0).tolist() == [True, False, True]
+
+    def test_keeps_real_extremes(self):
+        # a hot fire can exceed 1000; the guard must not clip real data
+        dnbr = np.array([-800.0, 1500.0, 2000.0])
+        assert severity.valid_dnbr(dnbr, nodata=0.0).all()
+
+    def test_handles_no_declared_nodata(self):
+        dnbr = np.array([100.0, np.nan, -32768.0])
+        assert severity.valid_dnbr(dnbr, None).tolist() == [True, False, False]

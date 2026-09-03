@@ -489,3 +489,29 @@ def confusion_kappa(a: np.ndarray, b: np.ndarray, classes=(1, 2, 3, 4)) -> float
     po = np.trace(cm) / n
     pe = (cm.sum(0) * cm.sum(1)).sum() / n**2
     return (po - pe) / (1 - pe) if pe < 1 else float("nan")
+
+
+#: dNBR(x1000) beyond this is not data. Real values live within roughly
+#: [-1000, 1500]; the bound only has to separate signal from fill.
+DNBR_ABS_MAX = 5000.0
+
+
+def valid_dnbr(dnbr: np.ndarray, nodata=None, *, abs_max: float = DNBR_ABS_MAX) -> np.ndarray:
+    """Mask of usable dNBR(x1000) pixels: finite, not fill, physically possible.
+
+    A raster's DECLARED nodata is not enough on its own. Some MTBS and RAVG
+    products declare ``nodata = 0`` and then fill with -32768 (CA's RED
+    SALMON COMPLEX and RED, both 2020) -- so a plain ``!= nodata`` test
+    passes the sentinel through, and it enters the statistics as a dNBR of
+    -32.768. In a Youden sweep over a fire whose classes barely separate,
+    that sentinel can then be selected as the "optimal" break, which is how
+    it was caught: two CA fires reported a low/moderate break of -32768.
+
+    Exactly the ``mod_t = 9999`` failure in a different raster: a sentinel
+    that is only a sentinel by convention. The physical bound catches any
+    fill value, declared or not.
+    """
+    ok = np.isfinite(dnbr) & (np.abs(dnbr) <= abs_max)
+    if nodata is not None and np.isfinite(nodata):
+        ok &= dnbr != nodata
+    return ok

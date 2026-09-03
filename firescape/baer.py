@@ -89,9 +89,26 @@ def footprints(bounds4326, *, primary_only: bool = True, timeout: float = 60.0):
     return gdf
 
 
-def match_perimeters(perimeters, *, min_frac: float = 0.90, primary_only: bool = True):
+def match_perimeters(perimeters, *, min_frac: float = 0.90, fire_years=None,
+                     year_window: tuple = (0, 1), primary_only: bool = True):
     """Which of ``perimeters`` (GeoDataFrame, any CRS, one row per fire) has a
     clean BAER SBS match, and what raster covers it.
+
+    **Pass ``fire_years``.** Spatial overlap alone is not a match: a fire
+    perimeter frequently sits inside a DIFFERENT fire's BAER footprint --
+    California burns over its own scars, and the big complexes cover ground
+    that reburns within a few seasons. Matching on geometry only put 29 of
+    140 CA fires against an assessment from another year (gaps of -7 to +7),
+    and those 29 came out with median Youden J 0.05 and kappa 0.002 against
+    0.52 and 0.20 for the rest: a BAER map of a different fire is noise, and
+    it looked like a weak result rather than a wrong join. Nevada happened to
+    be clean (all 19 gap 0), which is exactly why this went unnoticed there.
+
+    ``fire_years`` is an ignition year per row, aligned to ``perimeters``
+    (Series indexed like it, or any array-like in row order).
+    ``year_window`` is the allowed ``beginyear - ig_year`` range; the default
+    ``(0, 1)`` keeps same-season assessments plus the following spring, which
+    is when a late-season fire is normally walked.
 
     A match is "clean" when >= ``min_frac`` of the fire's own perimeter area
     is covered by ONE BAER footprint -- computed relative to the fire, not
@@ -115,12 +132,22 @@ def match_perimeters(perimeters, *, min_frac: float = 0.90, primary_only: bool =
         return pd.DataFrame(columns=["baer_name", "baer_year", "coverage_frac"])
 
     p5070, b5070 = p4326.to_crs(5070), baer.to_crs(5070)
+    years = None
+    if fire_years is not None:
+        years = (fire_years if hasattr(fire_years, "reindex")
+                 else pd.Series(list(fire_years), index=p5070.index))
+    lo, hi = year_window
     rows = []
     for idx, prow in p5070.iterrows():
         parea = prow.geometry.area
         if parea <= 0:
             continue
         cand = b5070[b5070.intersects(prow.geometry)]
+        if years is not None:
+            iy = years.get(idx) if hasattr(years, "get") else None
+            if iy is not None and pd.notna(iy):
+                gap = cand["beginyear"] - float(iy)
+                cand = cand[(gap >= lo) & (gap <= hi)]
         best_name, best_year, best_frac = None, None, 0.0
         for _, brow in cand.iterrows():
             frac = prow.geometry.intersection(brow.geometry).area / parea
