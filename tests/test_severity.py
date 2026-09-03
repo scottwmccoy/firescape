@@ -184,3 +184,51 @@ class TestDistributionalSeverity:
                                              corr_px=3, rng=1)
         assert d1.std() > 50.0
         assert (s0 == severity.SRC_DIRECT).all()
+
+
+class TestYoudenThreshold:
+    """A perfectly separable case has a known-exact optimal threshold."""
+
+    def test_perfect_separation(self):
+        dnbr = np.array([100.0, 150.0, 200.0, 400.0, 450.0, 500.0])
+        positive = np.array([False, False, False, True, True, True])
+        t, j = severity.youden_threshold(dnbr, positive)
+        assert t == pytest.approx(400.0)
+        assert j == pytest.approx(1.0)
+
+    def test_no_separation_gives_zero_j(self):
+        # every dNBR value appears with both labels -> best achievable J is 0
+        dnbr = np.array([100.0, 100.0, 200.0, 200.0])
+        positive = np.array([True, False, True, False])
+        _, j = severity.youden_threshold(dnbr, positive)
+        assert j == pytest.approx(0.0)
+
+    def test_all_one_class_is_undefined(self):
+        dnbr = np.array([100.0, 200.0, 300.0])
+        t, j = severity.youden_threshold(dnbr, np.array([True, True, True]))
+        assert np.isnan(t) and np.isnan(j)
+
+    def test_ties_are_included_on_the_positive_side(self):
+        # three pixels tied at 300; threshold=300 must count all of them
+        dnbr = np.array([100.0, 300.0, 300.0, 300.0, 500.0])
+        positive = np.array([False, True, True, True, True])
+        t, j = severity.youden_threshold(dnbr, positive)
+        assert t == pytest.approx(300.0)
+        assert j == pytest.approx(1.0)
+
+
+class TestConfusionKappa:
+    def test_perfect_agreement(self):
+        a = np.array([1, 2, 3, 4, 1, 2])
+        assert severity.confusion_kappa(a, a) == pytest.approx(1.0)
+
+    def test_systematic_one_class_swap_is_not_perfect(self):
+        a = np.array([1, 1, 1, 1, 2, 2, 2, 2])
+        b = np.array([2, 2, 2, 2, 1, 1, 1, 1])
+        assert severity.confusion_kappa(a, b) < 0  # worse than chance
+
+    def test_random_agreement_near_chance_is_near_zero(self):
+        rng = np.random.default_rng(0)
+        a = rng.integers(1, 5, size=20000)
+        b = rng.integers(1, 5, size=20000)
+        assert abs(severity.confusion_kappa(a, b)) < 0.03

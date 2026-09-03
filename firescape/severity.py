@@ -439,3 +439,53 @@ def simulate_dnbr_field(evt, pdsim: float, cdf_table=None, *,
     src = src_codes[inverse].reshape(evt.shape)
     dnbr[src == SRC_NODATA] = np.nan
     return dnbr, src
+
+
+def youden_threshold(dnbr: np.ndarray, positive: np.ndarray) -> tuple[float, float]:
+    """The dNBR value that best separates a binary severity target.
+
+    ``positive`` is e.g. "this pixel's REFERENCE product called it moderate
+    or worse" -- the empirical analogue of an analyst eyeballing where two
+    classes separate on the dNBR histogram, and the standard ROC-optimal
+    cutoff (Youden's J = TPR - FPR, maximized) rather than a coarse grid
+    search. Ties are handled by evaluating J once per unique dNBR value, at
+    the threshold that includes every pixel tied at that value.
+
+    Returns ``(threshold, J)``; ``(nan, nan)`` if ``positive`` is all-true or
+    all-false (no threshold can separate a single class).
+    """
+    dnbr = np.asarray(dnbr, dtype=float)
+    positive = np.asarray(positive, dtype=bool)
+    order = np.argsort(dnbr, kind="mergesort")
+    dn_sorted, y_sorted = dnbr[order], positive[order]
+    P, N = int(positive.sum()), int((~positive).sum())
+    if P == 0 or N == 0:
+        return float("nan"), float("nan")
+    suf_tp = np.cumsum(y_sorted[::-1].astype(np.int64))[::-1]
+    suf_n = np.cumsum(np.ones(len(y_sorted), dtype=np.int64)[::-1])[::-1]
+    uniq = np.unique(dn_sorted)
+    idx = np.searchsorted(dn_sorted, uniq, side="left")
+    TP = suf_tp[idx]
+    FP = suf_n[idx] - TP
+    J = TP / P - FP / N
+    best = int(np.argmax(J))
+    return float(uniq[best]), float(J[best])
+
+
+def confusion_kappa(a: np.ndarray, b: np.ndarray, classes=(1, 2, 3, 4)) -> float:
+    """Cohen's kappa between two same-shape class-code arrays.
+
+    Chance-corrected agreement: 0 = no better than the marginal class
+    frequencies would predict by chance, 1 = perfect. Used to compare a
+    BARC4-coded reference product (e.g. BAER SBS) against ``classify_barc4``
+    output pixel-for-pixel -- raw percent agreement alone is inflated
+    whenever one class dominates the footprint.
+    """
+    a, b = np.asarray(a), np.asarray(b)
+    k = len(classes)
+    cm = np.array([[np.sum((a == ai) & (b == bi)) for bi in classes] for ai in classes],
+                  dtype=float)
+    n = cm.sum()
+    po = np.trace(cm) / n
+    pe = (cm.sum(0) * cm.sum(1)).sum() / n**2
+    return (po - pe) / (1 - pe) if pe < 1 else float("nan")

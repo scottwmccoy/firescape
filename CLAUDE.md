@@ -113,9 +113,30 @@ the statewide figure 2026-08-14.
   vanish from listings after ~3 months; the `.provenance.json` sidecar
   (`stage_order`) is the durable record. Harmonize tool = PS2.SD/PSB.SD only.
 - ScienceBase 403s plain fetches — use curl/requests with a browser User-Agent.
-- BAER/SBS: NV fires are mostly BLM (ESR program, not USFS BAER) — query the
-  burn-severity portal ImageServer by IRWIN ID; fallback = derive dNBR from
-  Sentinel-2/Landsat with MTBS WFS threshold attributes.
+- BAER SBS (validated 2026-09-03, see `firescape/baer.py`): national mosaic
+  ImageServer at `imagery.geoplatform.gov/iipp/rest/services/Fire_Aviation/
+  USFS_EDW_BAER_SoilBurnSeverityClassification/ImageServer` (the
+  `apps.fs.usda.gov` URL some docs still cite has migrated here — it now 403s
+  with "migrated to IIPP"). Same browser-UA requirement as ScienceBase. Codes
+  1..5 = unburned-to-very-low/low/moderate/high/masked(developed), which
+  happens to match `severity.classify_barc4`'s own numbering; true background
+  is NOT 0 (was 15 on the fire tested) — **never pass `noData=0` to
+  exportImage**, it silently merges real unburned pixels into background.
+  `/query` on the mosaic catalog gives per-fire footprint polygons
+  (`category=1` = one fire; `category=2` = multi-fire overview mosaics,
+  exclude). Confirms the NV-is-mostly-BLM hypothesis empirically: only 19 of
+  123 statewide_v1 fires had a clean BAER match (>=90% perimeter coverage);
+  CA had 140 of ~287 candidate fires — BAER response is close to routine on
+  USFS land, unusual on NV's BLM rangeland. See `scripts/analysis/
+  p7_baer_comparison.py` (NV) / `p8_baer_comparison_ca.py` (CA).
+- Rossi et al. 2025 CA region shapefile (zenodo 10.5281/zenodo.15313560) ships
+  inside a single 2 GB `datasets.zip`, several members compressed with
+  Deflate64 (zip method 9) — CPython's `zipfile` cannot decompress that
+  method. Zenodo honors `Range` requests, so pull just the entries needed
+  (central directory + local records) without downloading the 2 GB archive,
+  repack them into a small standalone zip (raw copy, no decompression), and
+  hand THAT to the system `unzip` (Info-ZIP 6.00 on macOS does support
+  method 9). Region polygons staged at `raw/rossi_ca/ca_prefire_regions/`.
 
 ## Conventions
 
