@@ -30,6 +30,18 @@ fire, NV4164611529420220713, 2026-09-03): 1=unburned-to-very-low, 2=low,
 ``firescape.severity.classify_barc4``'s own 1..4 numbering -- no remap
 needed when comparing the two directly.
 
+**Always lock the mosaic to the tile you matched.** The service composites
+overlapping assessments with ``mosaicOperator: "First"``, so an
+``exportImage`` over a fire's window returns whichever tile the default rule
+picks -- not necessarily the one ``match_perimeters`` chose. Where BAER
+assessments overlap (California reburns; the August Complex 2020 tile alone
+covers 5,433 km2 of the Northern Coast Ranges) that silently substitutes a
+DIFFERENT fire's severity map, and the result looks like a real but weak
+comparison rather than a wrong one. On the BUCK 2017 fire the default mosaic
+gave dNBR medians of 13/2/-7/5 across BAER's four classes -- no burn signal
+at all -- while locking to ``buck_sbs`` gave 81/173/355/559 and moved
+Youden's J from 0.05 to 0.47. Pass ``lock_raster_id``.
+
 **Do NOT pass ``noData`` to exportImage.** The service's true background
 code is NOT 0 -- it was 15 on the fire tested, and forcing ``noData=0``
 silently merges real "unburned to very low" pixels (also coded close to the
@@ -72,7 +84,8 @@ def footprints(bounds4326, *, primary_only: bool = True, timeout: float = 60.0):
         "where": where, "geometry": f"{w},{s},{e},{n}",
         "geometryType": "esriGeometryEnvelope", "inSR": 4326,
         "spatialRel": "esriSpatialRelIntersects",
-        "outFields": "name,beginyear,endyear,category", "returnGeometry": "true",
+        "outFields": "objectid,name,beginyear,endyear,category",
+        "returnGeometry": "true",
         "outSR": 4326, "f": "json"}, timeout=timeout)
     r.raise_for_status()
     feats = r.json().get("features", [])
@@ -90,7 +103,7 @@ def footprints(bounds4326, *, primary_only: bool = True, timeout: float = 60.0):
 
 
 def match_perimeters(perimeters, *, min_frac: float = 0.90, fire_years=None,
-                     year_window: tuple = (0, 1), primary_only: bool = True):
+                     year_window: tuple = (0, 0), primary_only: bool = True):
     """Which of ``perimeters`` (GeoDataFrame, any CRS, one row per fire) has a
     clean BAER SBS match, and what raster covers it.
 
@@ -106,9 +119,13 @@ def match_perimeters(perimeters, *, min_frac: float = 0.90, fire_years=None,
 
     ``fire_years`` is an ignition year per row, aligned to ``perimeters``
     (Series indexed like it, or any array-like in row order).
-    ``year_window`` is the allowed ``beginyear - ig_year`` range; the default
-    ``(0, 1)`` keeps same-season assessments plus the following spring, which
-    is when a late-season fire is normally walked.
+    ``year_window`` is the allowed ``beginyear - ig_year`` range. It defaults
+    to ``(0, 0)`` -- same year only. A ``+1`` allowance was tried, on the
+    reasoning that a late-season fire is walked the following spring, and in
+    California it admitted nothing but reburns: all 10 of the +1 matches were
+    to a LATER fire's tile (three 2019 fires against AugustComplexNorth 2020),
+    median kappa -0.001. Even RANCH, which ignited in November, drew the next
+    year's complex rather than its own assessment.
 
     A match is "clean" when >= ``min_frac`` of the fire's own perimeter area
     is covered by ONE BAER footprint -- computed relative to the fire, not
@@ -119,7 +136,8 @@ def match_perimeters(perimeters, *, min_frac: float = 0.90, fire_years=None,
     (pass it already merged into ``perimeters``, e.g. as the index).
 
     Returns a DataFrame indexed like ``perimeters`` with ``baer_name,
-    baer_year, coverage_frac`` for every row that cleared ``min_frac``; rows
+    baer_year, baer_oid, coverage_frac`` (pass ``baer_oid`` to
+    :func:`fetch_aligned` as ``lock_raster_id`` -- see the module docstring) for every row that cleared ``min_frac``; rows
     with no adequate match are simply absent, not zero-filled.
     """
     import pandas as pd
@@ -148,19 +166,21 @@ def match_perimeters(perimeters, *, min_frac: float = 0.90, fire_years=None,
             if iy is not None and pd.notna(iy):
                 gap = cand["beginyear"] - float(iy)
                 cand = cand[(gap >= lo) & (gap <= hi)]
-        best_name, best_year, best_frac = None, None, 0.0
+        best_name, best_year, best_oid, best_frac = None, None, None, 0.0
         for _, brow in cand.iterrows():
             frac = prow.geometry.intersection(brow.geometry).area / parea
             if frac > best_frac:
                 best_name, best_year, best_frac = brow["name"], brow["beginyear"], frac
+                best_oid = brow.get("objectid")
         if best_frac >= min_frac:
             rows.append({"_idx": idx, "baer_name": best_name, "baer_year": best_year,
-                        "coverage_frac": round(best_frac, 4)})
+                        "baer_oid": best_oid, "coverage_frac": round(best_frac, 4)})
     return pd.DataFrame(rows).set_index("_idx") if rows else pd.DataFrame(
-        columns=["baer_name", "baer_year", "coverage_frac"])
+        columns=["baer_name", "baer_year", "baer_oid", "coverage_frac"])
 
 
-def fetch_aligned(bounds, shape, crs_epsg: int, *, timeout: float = 120.0) -> np.ndarray:
+def fetch_aligned(bounds, shape, crs_epsg: int, *, lock_raster_id=None,
+                  timeout: float = 120.0) -> np.ndarray:
     """BAER SBS classified codes on the EXACT grid described by ``bounds``
     (left, bottom, right, top), ``shape`` (rows, cols), ``crs_epsg``.
 
@@ -169,14 +189,26 @@ def fetch_aligned(bounds, shape, crs_epsg: int, *, timeout: float = 120.0) -> np
     Nearest-neighbor -- these are categorical codes, and any other
     interpolation invents class values that no source pixel held (same
     reasoning as ``plotting._severity_rgba``).
+
+    ``lock_raster_id`` is a catalog ``objectid`` (from :func:`footprints` or
+    :func:`match_perimeters`). Pass it: without it the service composites
+    every overlapping assessment by its own default rule and can return a
+    different fire's map. See the module docstring.
     """
+    import json as _json
+
     left, bottom, right, top = bounds
     h, w = shape
-    r = requests.get(f"{BASE}/exportImage", headers={"User-Agent": UA}, params={
+    params = {
         "bbox": f"{left},{bottom},{right},{top}", "bboxSR": crs_epsg,
         "imageSR": crs_epsg, "size": f"{w},{h}", "format": "tiff",
-        "pixelType": "U8", "interpolation": "RSP_NearestNeighbor", "f": "image"},
-        timeout=timeout)
+        "pixelType": "U8", "interpolation": "RSP_NearestNeighbor", "f": "image"}
+    if lock_raster_id is not None:
+        params["mosaicRule"] = _json.dumps({
+            "mosaicMethod": "esriMosaicLockRaster",
+            "lockRasterIds": [int(lock_raster_id)]})
+    r = requests.get(f"{BASE}/exportImage", headers={"User-Agent": UA},
+                     params=params, timeout=timeout)
     r.raise_for_status()
     with rasterio.io.MemoryFile(r.content) as mf, mf.open() as ds:
         return ds.read(1)

@@ -95,8 +95,12 @@ for event_id, f in match.iterrows():
         dnbr = ds.read(1).astype("float64")
         nodata, crs_epsg, bounds = ds.nodata, ds.crs.to_epsg(), ds.bounds
 
+    # Locked to the tile match_perimeters chose: the mosaic otherwise
+    # composites overlapping assessments by its own rule and can hand back a
+    # different fire's map (see firescape.baer module docstring).
     baer_cls = baer.fetch_aligned((bounds.left, bounds.bottom, bounds.right, bounds.top),
-                                  dnbr.shape, crs_epsg)
+                                  dnbr.shape, crs_epsg,
+                                  lock_raster_id=f.get("baer_oid"))
     valid = severity.valid_dnbr(dnbr, nodata) & (baer_cls >= 1) & (baer_cls <= 4)
     if valid.sum() < 200:
         print(f"{f['incid_name']:16s} SKIP -- only {int(valid.sum())} jointly-valid px", flush=True)
