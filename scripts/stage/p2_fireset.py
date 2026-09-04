@@ -48,6 +48,11 @@ big = fires[(fires["km2"] >= MIN_KM2)
 # calibrate P_dsim (their observed classes come from dnbr6, not mod_t) but
 # must stay OUT of the regional break median -- Rossi's rule is a median
 # of real analyst thresholds. thresholds_ok gates the break median only.
+# BAER-programme records can carry GTAC's 0-255 BARC256 thresholds instead
+# of dNBR (three 2024 fires did: Davis 158, Bear 120, Broom Canyon 111, and
+# they sat inside the v1..v1_3 Sierra Nevada break median, 312 vs 350).
+# Convert BEFORE anything reads the numbers.
+big = mtbs.normalize_thresholds(big)
 big["thresholds_ok"] = (big["mod_t"].fillna(0) > 0) & (big["mod_t"].fillna(9999) < 2000)
 # newest LFPS vintage strictly predating ignition; the catalog holds only
 # LF2016/LF2022/LF2023/LF2024/LF2025 (no LF2020), so 2017-2022 pair with
@@ -75,8 +80,9 @@ print(big.nlargest(8, "km2")[["event_id", "incid_name", "ig_year", "km2"]]
       .round(0).to_string(index=False))
 
 cols = ["event_id", "incid_name", "ig_date", "ig_year", "incid_type", "km2",
-        "low_t", "mod_t", "high_t", "dnbr_offst", "evt_vintage",
-        "have_bundle", "thresholds_ok", "include", "lon", "lat"]
+        "map_prog", "asmnt_type", "low_t", "mod_t", "high_t", "threshold_scale",
+        "dnbr_offst", "evt_vintage", "have_bundle", "thresholds_ok", "include",
+        "lon", "lat"]
 out_csv = f"{REPO_SETS}/statewide_v1.csv"
 big.sort_values(["ig_year", "km2"], ascending=[True, False])[cols].to_csv(
     out_csv, index=False)

@@ -116,6 +116,8 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
                      dem=None, evt=None,
                      i15_mmh: float = 24.0, cdf_tables: dict | None = None,
                      dispersed_sigma: float | None = None,
+                     observed_breaks: tuple[float, float, float] | None = None,
+                     force_decomp: bool = False,
                      tag: str = "") -> FireCalib | dict:
     """Calibrate P_dsim for one fire. ``thresholds`` = (low_t, mod_t) analyst
     values; ``regional_break`` classifies the simulated dNBR (Rossi Fig 3).
@@ -131,6 +133,18 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
     of prefire.run_unit): ``dem`` must already cover the fire perimeter plus
     ``PERIMETER_BUFFER_M`` on the working grid; ``evt`` is aligned to it here.
     Path-based loading (``dem_path``/``evt_path``) remains the pilot route.
+
+    ``observed_breaks`` = the analyst's own (low, moderate, high) dNBR
+    thresholds, used to build the OBSERVED classes when the bundle has no
+    ``dnbr6``. MTBS bundles ship ``dnbr6`` -- the analyst's classes, made at
+    that fire's thresholds. BAER/RAVG/provisional bundles do not, and before
+    this parameter existed those fires fell back to pfdf's fixed 125/250/500,
+    which is not the same thing at all (Davis: analyst moderate 515, pfdf
+    250 -- most of the fire "moderate+", P_dsim 0.78). Pass the fire's
+    thresholds (already on the dNBR scale, see ``mtbs.normalize_thresholds``)
+    to mirror what dnbr6 gives MTBS fires. ``force_decomp`` rebuilds the class
+    decomposition even when a sibling cache exists -- required when the
+    observed side changes, because the decomposition stores observed T/F.
     """
     import geopandas as gpd
     import rasterio
@@ -141,7 +155,7 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
     from pfdf.utils import intensity
 
     multi = cdf_tables is not None
-    cached = load_cached(event_id, tag)
+    cached = None if force_decomp else load_cached(event_id, tag)
     if cached is not None and not multi:
         return cached
     if cached is not None and multi:
@@ -169,7 +183,8 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
         return (np.where(np.isfinite(lam), lam, fb_lam),
                 np.where(np.isfinite(kap), kap, fb_kap))
 
-    dec = _find_decomp(event_id, tag)
+    dec = None if force_decomp else _find_decomp(event_id, tag)
+    observed_source = "decomp-cache"
     if dec is None:
         bundle = mtbs.fire_bundle(event_id)
         if dem is None:
@@ -201,8 +216,17 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
         if "dnbr6" in bundle:
             dnbr6 = match_grid(Raster.from_file(bundle["dnbr6"]), dem, resampling="nearest")
             barc4_arr = mtbs.dnbr6_to_barc4(dnbr6.values)
+            observed_source = "dnbr6"
+        elif observed_breaks is not None:
+            arr = np.asarray(dnbr.values, dtype=float)
+            if dnbr.nodata is not None:
+                arr = np.where(arr == float(dnbr.nodata), np.nan, arr)
+            arr = np.where(np.abs(arr) < severity.DNBR_ABS_MAX, arr, np.nan)
+            barc4_arr = severity.classify_barc4(arr, tuple(float(b) for b in observed_breaks))
+            observed_source = "analyst_thresholds:" + "/".join(f"{b:g}" for b in observed_breaks)
         else:
             barc4_arr = pfsev.estimate(dnbr).values.astype(np.uint8)
+            observed_source = "pfdf_default:125/250/500"
         barc4 = Raster.from_array(barc4_arr, spatial=dem, nodata=0)
         modhigh = pfsev.mask(barc4, ["moderate", "high"])
         kf_dummy = Raster.from_array(np.full(dem.shape, 0.25, dtype="float32"),
@@ -354,9 +378,9 @@ def fire_calibration(event_id: str, thresholds: tuple[float, float],
             "low_t": float(low_t), "mod_t": float(mod_t),
             "regional_break": float(regional_break),
             "validation_dT": dT, "validation_dF": dF,
-            "severity_source": ("decomp-cache" if dec is not None else
-                                ("dnbr6" if "dnbr6" in bundle else "estimate(dnbr)")),
+            "severity_source": observed_source,
             "solve_source": "decomp-cache" if dec is not None else "full",
+            "observed_source": observed_source,
             "solve_space": "logit (S cancels; KF-independent)"}
     (cache / "fire.json").write_text(json.dumps(meta, indent=2))
     if multi:

@@ -21,6 +21,7 @@ as burned.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -50,6 +51,71 @@ SEVERITY_CLASSES = {
 _DNBR6_TO_BARC4 = np.array([0, 1, 2, 3, 4, 0, 0], dtype=np.uint8)
 
 
+#: BARC thresholds recorded on GTAC's 0-255 BARC256 display scale never
+#: exceed this; real dNBR(x1000) low/moderate breaks in this program's record
+#: never fall below it (lowest MTBS analyst mod_t seen: 111 -> no; 205 on
+#: Mountain View). Only ``map_prog == "BAER"`` records are ever on that scale.
+BARC256_MAX = 250.0
+
+
+def barc256_to_dnbr(x):
+    """GTAC BARC256 (0-255) -> dNBR x1000.
+
+    BARC256 is dNBR rescaled for display; its default class breaks 76/110/187
+    are Key & Benson's dNBR breaks 105/275/660, i.e. ``dNBR = 5*B - 275``.
+    Confirmed empirically 2026-09-03 on 13 BARC fires: Davis's recorded
+    moderate threshold 158 -> 515, which is exactly the break recovered from
+    its field-verified soil burn severity map (Park 134 -> 395 vs 394, Hill
+    118 -> 315 vs 318; rho = +0.79). Applies ONLY to thresholds delivered
+    with BAER-programme records -- MTBS, RAVG and provisional thresholds are
+    already dNBR, and so are 5 of the 18 BAER ones (mod_t 290-400).
+    """
+    return 5.0 * np.asarray(x, dtype=float) - 275.0
+
+
+def normalize_thresholds(df, *, is_barc=None, map_prog_col: str = "map_prog"):
+    """Put ``low_t/mod_t/high_t`` on the dNBR scale, row by row.
+
+    A record is treated as BARC256-scaled when it comes from the BAER
+    programme (``is_barc`` mask, or ``df[map_prog_col] == "BAER"``) AND its
+    moderate threshold is a real value below ``BARC256_MAX``. Sentinels
+    (0, 9999) are left alone. Adds a ``threshold_scale`` column recording
+    what was done (``"dnbr"`` / ``"barc256->dnbr"``). Returns a copy.
+
+    This is the guard that was missing when three 2024 fires whose bundles
+    came back as BARC (Davis 158, Bear 120, Broom Canyon 111) entered the
+    statewide_v1..v1_3 regional break medians: Sierra Nevada 312 -> 350.
+    """
+    out = df.copy()
+    if is_barc is None:
+        if map_prog_col not in out.columns:
+            raise ValueError(f"need an is_barc mask or a {map_prog_col!r} column")
+        is_barc = out[map_prog_col].astype(str).str.upper().eq("BAER")
+    is_barc = np.asarray(is_barc, dtype=bool)
+    mod = out["mod_t"].fillna(0).astype(float).to_numpy()
+    conv = is_barc & (mod > 0) & (mod < BARC256_MAX)
+    for col in ("low_t", "mod_t", "high_t"):
+        if col in out.columns:
+            v = out[col].astype(float).to_numpy()
+            real = np.isfinite(v) & (v > 0) & (v < 2000)     # keep sentinels as-is
+            out[col] = np.where(conv & real, barc256_to_dnbr(v), v)
+    out["threshold_scale"] = np.where(conv, "barc256->dnbr", "dnbr")
+    return out
+
+
+def bundle_programme(event_id_or_bundle) -> str:
+    """Which programme produced a downloaded bundle's dNBR: ``mtbs``, ``baer``,
+    ``ravg`` or ``provisional`` -- from the file-name prefix the portal writes.
+
+    Material to the calibration: MTBS bundles ship a ``dnbr6`` analyst class
+    raster; the others do not, so their observed classes must be built from
+    the analyst thresholds instead (see ``calibrate.fire_calibration``).
+    """
+    b = event_id_or_bundle if isinstance(event_id_or_bundle, dict) else fire_bundle(event_id_or_bundle)
+    m = re.match(r"(mtbs|baer|ravg|provisional)_", Path(b["dnbr"]).name.lower())
+    return m.group(1) if m else "unknown"
+
+
 def dnbr6_to_barc4(dnbr6: np.ndarray) -> np.ndarray:
     """Map an MTBS dnbr6 array onto BARC4 (0=nodata, 1..4)."""
     arr = np.asarray(dnbr6)
@@ -61,13 +127,17 @@ def dnbr6_to_barc4(dnbr6: np.ndarray) -> np.ndarray:
 
 def fire_records(*, event_id_like: str | None = "NV%", after: str | None = None,
                  min_acres: float | None = None, bbox4326=None,
-                 timeout: float = 180.0):
+                 event_ids=None, timeout: float = 180.0):
     """Per-fire MTBS records (attributes + perimeter) from the WFS layer.
 
     Attributes include ``event_id, irwinid, incid_name, ig_date, burnbndac,
-    dnbr_offst, dnbr_stddv, nodata_t, incgreen_t, low_t, mod_t, high_t`` — the
-    ``*_t`` fields are the fire-specific analyst dNBR thresholds needed for
-    calibration (unburned-low = low_t, low-moderate = mod_t, mod-high = high_t).
+    map_prog, asmnt_type, dnbr_offst, dnbr_stddv, nodata_t, incgreen_t, low_t,
+    mod_t, high_t`` — the ``*_t`` fields are the fire-specific analyst
+    thresholds needed for calibration (unburned-low = low_t, low-moderate =
+    mod_t, mod-high = high_t). **They are on the dNBR scale only for
+    ``map_prog`` MTBS/RAVG/provisional; BAER records may carry GTAC's 0-255
+    BARC256 values** -- run :func:`normalize_thresholds` before using them
+    numerically. ``event_ids`` queries an exact set instead of ``LIKE``.
 
     ``min_acres`` filters server-side (burnbndac is numeric). ``after``
     (YYYY-MM-DD) and ``bbox4326`` filter client-side: ``ig_date`` is served as
@@ -77,7 +147,10 @@ def fire_records(*, event_id_like: str | None = "NV%", after: str | None = None,
     import geopandas as gpd
 
     cql = []
-    if event_id_like:
+    if event_ids is not None:                       # exact set, overrides LIKE
+        ids = ", ".join(f"'{e}'" for e in event_ids)
+        cql.append(f"event_id IN ({ids})")
+    elif event_id_like:
         cql.append(f"event_id LIKE '{event_id_like}'")
     if min_acres is not None:
         cql.append(f"burnbndac >= {float(min_acres):.0f}")
@@ -122,8 +195,14 @@ def dedupe_records(gdf):
     """
     df = gdf.copy()
     df["_has_t"] = (df.get("mod_t", 0) > 0).astype(int)
-    df = df.sort_values(["_has_t", "burnbndac"], ascending=False)
-    return df.drop_duplicates("event_id", keep="first").drop(columns="_has_t")
+    # Among thresholded rows prefer the MTBS mapping: it is the product whose
+    # dnbr6 the bundle ships, so its thresholds are the ones the observed
+    # classes were made at. A BAER row can carry BARC256-scale numbers and a
+    # marginally larger perimeter (York 2023: BAER 94,990 ac / 64-113-180 vs
+    # MTBS 94,736 ac / 45-275-375) and used to win on area alone.
+    df["_is_mtbs"] = df.get("map_prog", pd.Series("", index=df.index)).astype(str).str.upper().eq("MTBS").astype(int)
+    df = df.sort_values(["_has_t", "_is_mtbs", "burnbndac"], ascending=False)
+    return df.drop_duplicates("event_id", keep="first").drop(columns=["_has_t", "_is_mtbs"])
 
 
 def severity_mosaic(year: int, bounds4326, dest: Path, *, timeout: float = 600.0) -> Path:
