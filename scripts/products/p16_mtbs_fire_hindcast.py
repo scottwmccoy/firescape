@@ -52,7 +52,7 @@ import geopandas as gpd
 from firescape import assess, config, mtbs, paths, plotting as mc, statewide
 from stormscape import burn
 
-CAL_DEFAULT = "statewide_v1_3"
+CAL_DEFAULT = "statewide_v1_4"
 DESIGN_I15 = 24.0
 TILE_DIR = paths.cache_root() / "3dep_tiles"
 INVENTORY = paths.raw_dir("debrisflow_inventory") / "nv_debrisflow_inventory.geojson"
