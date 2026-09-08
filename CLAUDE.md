@@ -6,8 +6,11 @@ Pre-fire PFDF hazard tool for Nevada (USGS LHP award, Task 2/Deliverable 2, due
 
 ## Environment — IMPORTANT
 
-- Run all Python with the **FireMan** conda env:
-  `/opt/anaconda3/envs/FireMan/bin/python`
+- Run all Python with the **FireMan** conda env — on Scott's machine that is
+  `/opt/anaconda3/envs/FireMan/bin/python`; elsewhere activate your own env and
+  point `FIRESCAPE_PYTHON` at it for the shell wrappers. No path in the code is
+  machine-specific: data root, sibling research folders, cache, interpreter and
+  email all come from environment variables (README "Configuration").
 - FireMan is a conda-forge base (python 3.12) whose science stack is
   **pip-managed** (pfdf pulled it in). Extend it with FireMan's own pip —
   do NOT `conda install` scientific packages into it (double-manages numpy).
@@ -17,8 +20,8 @@ Pre-fire PFDF hazard tool for Nevada (USGS LHP award, Task 2/Deliverable 2, due
 - LFPS jobs and MTBS bundle orders need an address to notify: `export
   FIRESCAPE_EMAIL=you@example.edu` (the older `FIRESCAPE_LFPS_EMAIL` is still
   honored). Resolved by `landfire.delivery_email()`; there is **no default**.
-- `stormscape` is an editable local install from `~/git/code/stormscape`.
-- `tracescape` is an editable local install from `~/git/code/tracescape`
+- `stormscape` is an editable install of a sibling checkout (`~/git/code/stormscape` on Scott's machine).
+- `tracescape` is an editable install of a sibling checkout (`~/git/code/tracescape` on Scott's machine)
   (`exposure.py` borrows its corridor width law).
 
 ## Data layout
@@ -50,7 +53,7 @@ Pre-fire PFDF hazard tool for Nevada (USGS LHP award, Task 2/Deliverable 2, due
 | **tracescape** | MIT | Imagery change detection: epochs, robust z, corridor/fan conditioning. *Validates* what firescape predicts |
 | **firescape** | GPL-3 (pfdf) | Simulated severity, the hazard chain, calibration, statewide surfaces, exposure |
 
-The imagery-validation workflow was carved out to `~/git/code/tracescape` on
+The imagery-validation workflow was carved out to the sibling `tracescape` repo on
 2026-08-19 (it was `planetscope/sources/epochs/change/corridor/fans` +
 `scripts/verify/`). firescape imports **one** function from it,
 `corridor.corridor_width_m`, so `exposure.py`'s "delivers to this asset" and

@@ -35,8 +35,7 @@ from firescape import mtbs, paths, severity, statewide
 
 T0 = time.time()
 BUDGET = float(os.environ.get("FIRESCAPE_REFIT_BUDGET", 900))
-SET = ("/Users/scottmccoy/git/code/firescape/firescape/data/"
-       "calibration/fire_sets/statewide_v1.csv")
+SET = (paths.package_data("calibration", "fire_sets", "statewide_v1.csv"))
 CACHE = paths.interim_dir("calib", "refit_samples_statewide")
 CACHE.mkdir(parents=True, exist_ok=True)
 PER_FIRE_CAP = 120_000        # pixels per class per fire

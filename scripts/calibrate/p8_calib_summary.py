@@ -13,13 +13,12 @@ from datetime import date
 
 import pandas as pd
 
-from firescape import calibrate
+from firescape import calibrate, paths
 
-SET = ("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-       "fire_sets/statewide_v1.csv")
-CAL_DIR = "/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-OUT_TOML = CAL_DIR + "statewide_v1_4.toml"
-PREV = tomllib.loads(open(CAL_DIR + "statewide_v1_3.toml", "rb").read().decode())
+SET = (paths.package_data("calibration", "fire_sets", "statewide_v1.csv"))
+CAL_DIR = paths.package_data("calibration")
+OUT_TOML = CAL_DIR / "statewide_v1_4.toml"
+PREV = tomllib.loads((CAL_DIR / "statewide_v1_3.toml").read_bytes().decode())
 
 df = pd.read_csv(SET)
 use = df[df["include"]].copy()
@@ -106,7 +105,6 @@ for region in sorted(summary.index):
 with open(OUT_TOML, "w") as f:
     f.write("\n".join(lines) + "\n")
 print(f"\nwrote {OUT_TOML}")
-out_csv = ("/Users/scottmccoy/Library/CloudStorage/Box-Box/SWMresearch/PostFireDebrisFlows/"
-           "PreFireAssessment/products/calibration/statewide_v1_4_fires.csv")
+out_csv = (paths.research_root() / "PreFireAssessment" / "products" / "calibration" / "statewide_v1_4_fires.csv")
 cal.to_csv(out_csv, index=False)
 print(f"wrote {out_csv}")

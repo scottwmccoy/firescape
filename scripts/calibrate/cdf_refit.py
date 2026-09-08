@@ -18,8 +18,7 @@ from rasterio.enums import Resampling
 
 from firescape import mtbs, paths, severity
 
-FIRE_SET = ("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-            "fire_sets/pilot_v1.csv")
+FIRE_SET = (paths.package_data("calibration", "fire_sets", "pilot_v1.csv"))
 EVT_DIR = paths.raw_dir("landfire") / "LF2016_EVT_pilot"
 EVT_TIF = EVT_DIR / "LF2016_EVT_pilot.tif"
 MIN_YEAR = 2017          # EVT vintage LF2016 -> only later fires are era-matched

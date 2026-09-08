@@ -12,12 +12,10 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from firescape import calibrate
+from firescape import calibrate, paths
 
-SET = ("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-       "fire_sets/statewide_v1.csv")
-OUT_TOML = ("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-            "statewide_v1_2.toml")
+SET = (paths.package_data("calibration", "fire_sets", "statewide_v1.csv"))
+OUT_TOML = (paths.package_data("calibration", "statewide_v1_2.toml"))
 
 df = pd.read_csv(SET)
 use = df[df["include"]].copy()
@@ -89,7 +87,5 @@ for region in sorted(summary.index):
 with open(OUT_TOML, "w") as f:
     f.write("\n".join(lines) + "\n")
 print(f"\nwrote {OUT_TOML}")
-cal.to_csv("/Users/scottmccoy/Library/CloudStorage/Box-Box/SWMresearch/"
-           "PostFireDebrisFlows/PreFireAssessment/products/calibration/"
-           "statewide_v1_1_fires.csv", index=False)
+cal.to_csv(paths.products_dir("calibration") / "statewide_v1_1_fires.csv", index=False)
 print("wrote products/calibration/statewide_v1_fires.csv")

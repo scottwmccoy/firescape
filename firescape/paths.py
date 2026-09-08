@@ -1,7 +1,9 @@
 """Path policy: where data, caches, and products live.
 
 All heavy data lives on Box under ``$FIRESCAPE_DATA`` (default: the
-PreFireAssessment project folder). Caches and download staging are LOCAL
+PreFireAssessment project folder at Box Drive's standard sync location under
+the current user's home). Sibling project folders come from
+``research_root()``; files shipped in the package from ``package_data()``. Caches and download staging are LOCAL
 (``$FIRESCAPE_CACHE``, default ``~/.cache/firescape``) because Box sync
 performs poorly with sqlite files and many small writes. Downloads stream to
 local staging and are moved into Box atomically so partially-written files
@@ -24,16 +26,58 @@ BROWSER_UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 )
 
-_BOX_DEFAULT = Path(
-    "/Users/scottmccoy/Library/CloudStorage/Box-Box/SWMresearch"
-    "/PostFireDebrisFlows/PreFireAssessment"
-)
+# The shared Box folder, at the location Box Drive syncs it to on every
+# member's Mac. Override with $FIRESCAPE_DATA (a different sync location, a
+# Linux box, CI).
+_BOX_DEFAULT = (Path.home() / "Library" / "CloudStorage" / "Box-Box" / "SWMresearch"
+                / "PostFireDebrisFlows" / "PreFireAssessment")
 
 _SHA256_MAX_BYTES = 200 * 1024 * 1024  # skip hashing very large files
 
 
 def data_root() -> Path:
-    return Path(os.environ.get("FIRESCAPE_DATA", _BOX_DEFAULT))
+    """The project data folder (``raw/``, ``interim/``, ``products/``, ``figures/``).
+
+    ``$FIRESCAPE_DATA`` if set, else the Box folder at its standard sync
+    location. When neither exists nothing is created: a stray directory tree
+    under ``~/Library/CloudStorage`` on a machine without Box is worse than a
+    clear error.
+    """
+    env = os.environ.get("FIRESCAPE_DATA")
+    if env:
+        return Path(env)
+    if not _BOX_DEFAULT.is_dir():
+        raise FileNotFoundError(
+            f"firescape data folder not found at {_BOX_DEFAULT}. Sync the "
+            "PreFireAssessment Box folder, or set $FIRESCAPE_DATA to where it lives.")
+    return _BOX_DEFAULT
+
+
+def research_root() -> Path:
+    """The folder ABOVE the project data folder: ``SWMresearch/PostFireDebrisFlows``,
+    which holds the sibling per-fire and per-storm project folders some
+    scripts read (``2026_Bug_Stalion/storms/...``, ``2024_BearFire``,
+    ``Volume_debrisFlows/...``). ``$FIRESCAPE_RESEARCH`` overrides; the
+    default is the parent of :func:`data_root`.
+    """
+    env = os.environ.get("FIRESCAPE_RESEARCH")
+    return Path(env) if env else data_root().parent
+
+
+def package_data(*parts: str) -> Path:
+    """A file shipped inside the package: ``firescape/data/<parts...>``
+    (calibration TOMLs and fire sets, region GeoJSONs, the Staley 2018
+    tables). Resolved from the installed package, never from a checkout path.
+    """
+    return Path(__file__).resolve().parent.joinpath("data", *parts)
+
+
+def python_executable() -> str:
+    """Interpreter for subprocess fan-out: ``$FIRESCAPE_PYTHON`` if set, else
+    the one running this code."""
+    import sys
+
+    return os.environ.get("FIRESCAPE_PYTHON") or sys.executable
 
 
 def cache_root() -> Path:

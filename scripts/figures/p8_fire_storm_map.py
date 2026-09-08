@@ -20,8 +20,7 @@ from stormscape import relief
 
 FIRE = sys.argv[1] if len(sys.argv) > 1 else "Stallion"
 CAL = sys.argv[2] if len(sys.argv) > 2 else "statewide_v1_1"
-STORM = ("/Users/scottmccoy/Library/CloudStorage/Box-Box/SWMresearch/"
-         "PostFireDebrisFlows/2026_Bug_Stalion/storms/composite_20260812-20260814")
+STORM = (paths.research_root() / "2026_Bug_Stalion" / "storms" / "composite_20260812-20260814")
 SRC = paths.products_dir("forecast", f"{FIRE.lower()}_{CAL}")
 meta = json.loads((SRC / "storm_response_summary.json").read_text())
 

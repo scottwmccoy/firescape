@@ -16,8 +16,7 @@ import pandas as pd
 
 from firescape import mtbs, paths
 
-REPO_SETS = ("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-             "fire_sets")
+REPO_SETS = (paths.package_data("calibration", "fire_sets"))
 MIN_KM2 = 10.0
 AC_TO_KM2 = 0.00404686
 

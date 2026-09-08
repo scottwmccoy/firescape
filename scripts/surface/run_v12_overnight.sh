@@ -4,11 +4,13 @@
 # artifact the next stage needs, so this can be killed and relaunched at any
 # point without redoing finished work.
 set -u
-PY=/opt/anaconda3/envs/FireMan/bin/python
-REPO=~/git/code/firescape
+# Interpreter: set FIRESCAPE_PYTHON to your env's python, or activate it first.
+PY="${FIRESCAPE_PYTHON:-python3}"
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 LOG=/tmp/v12_overnight.log
 TOML=$REPO/firescape/data/calibration/statewide_v1_2.toml
-PROD="/Users/scottmccoy/Library/CloudStorage/Box-Box/SWMresearch/PostFireDebrisFlows/PreFireAssessment/products/prefire/statewide_v1_2"
+DATA="${FIRESCAPE_DATA:-$HOME/Library/CloudStorage/Box-Box/SWMresearch/PostFireDebrisFlows/PreFireAssessment}"
+PROD="$DATA/products/prefire/statewide_v1_2"
 
 say() { print -r -- "[$(date '+%H:%M:%S')] $*" | tee -a $LOG; }
 

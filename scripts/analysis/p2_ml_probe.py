@@ -24,8 +24,7 @@ if COV.exists():
     df = pd.read_parquet(COV)
     print(f"loaded {len(df):,} cached covariate samples")
 else:
-    FIRE_SET = ("/Users/scottmccoy/git/code/firescape/firescape/data/"
-                "calibration/fire_sets/pilot_v1.csv")
+    FIRE_SET = (paths.package_data("calibration", "fire_sets", "pilot_v1.csv"))
     EVT_DIR = paths.raw_dir("landfire") / "LF2016_EVT_pilot"
     fires = pd.read_csv(FIRE_SET)
     use = fires[fires["include"] & (fires["ig_year"] >= 2017)]

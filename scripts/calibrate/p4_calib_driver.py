@@ -21,8 +21,7 @@ from firescape import calibrate, mtbs, paths, severity, statewide
 
 T0 = time.time()
 BUDGET = float(os.environ.get("FIRESCAPE_CAL_BUDGET", 520))
-SET = ("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-       "fire_sets/statewide_v1.csv")
+SET = (paths.package_data("calibration", "fire_sets", "statewide_v1.csv"))
 TILE_DIR = paths.cache_root() / "3dep_tiles"
 TABLES = {"staley2018": severity.load_cdf_table(),
           "nv_merged": severity.load_cdf_table(table="nv_merged")}

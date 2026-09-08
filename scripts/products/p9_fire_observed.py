@@ -80,8 +80,7 @@ with rasterio.open(dnbr_x1000, "w", **prof) as ds:
 print(f"wrote {sev_tif.name} and {dnbr_x1000.name}", flush=True)
 
 # --- hazard chain on observed severity --------------------------------------
-reg = gpd.read_file("/Users/scottmccoy/git/code/firescape/firescape/data/"
-                    "regions/nv_prefire_regions.geojson").to_crs(4326)
+reg = gpd.read_file(paths.package_data("regions", "nv_prefire_regions.geojson")).to_crs(4326)
 pt = per.geometry.union_all().representative_point()
 hit = reg.loc[reg.contains(pt), "region"]
 region = str(hit.iloc[0]) if len(hit) else "Central Basin and Range"

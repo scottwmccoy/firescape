@@ -20,7 +20,7 @@ from firescape import calibrate, paths
 from firescape.hazard import logistic_m1_reference
 
 fires = pd.read_csv(
-    "/Users/scottmccoy/git/code/firescape/firescape/data/calibration/fire_sets/pilot_v1.csv"
+    paths.package_data("calibration", "fire_sets", "pilot_v1.csv")
 ).set_index("event_id")
 
 calibs, rows = [], []

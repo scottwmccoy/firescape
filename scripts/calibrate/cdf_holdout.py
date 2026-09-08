@@ -28,8 +28,7 @@ BREAK = 281.0
 PD_GRID = np.round(np.arange(0.20, 0.96, 0.02), 2)
 OUTC = paths.products_dir("calibration")
 
-fires = pd.read_csv("/Users/scottmccoy/git/code/firescape/firescape/data/"
-                    "calibration/fire_sets/pilot_v1.csv")
+fires = pd.read_csv(paths.package_data("calibration", "fire_sets", "pilot_v1.csv"))
 use = fires[fires["include"] & (fires["ig_year"] >= 2017)
             & (fires["event_id"] != HOLDOUT)]
 print(f"refitting from {len(use)} fires, Loyalton held out")

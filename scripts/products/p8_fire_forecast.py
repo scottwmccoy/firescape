@@ -52,8 +52,7 @@ print(f"{FIRE}: {acres:,.0f} acres ({acres*0.00404686:.1f} km2) from {PERIM.name
 
 # which calibration region does the fire sit in?
 reg = gpd.read_file(
-    "/Users/scottmccoy/git/code/firescape/firescape/data/regions/"
-    "nv_prefire_regions.geojson").to_crs(per.crs)
+    paths.package_data("regions", "nv_prefire_regions.geojson")).to_crs(per.crs)
 pt = gpd.GeoSeries([geom], crs=per.crs).representative_point().iloc[0]
 region = reg.loc[reg.contains(pt), "region"]
 region = str(region.iloc[0]) if len(region) else "Central Basin and Range"

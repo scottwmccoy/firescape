@@ -17,7 +17,7 @@ import pandas as pd
 from firescape import assess, calibrate, mtbs, paths, statewide
 
 FIG = str(Path(__file__).parent / "p2_hindcast_fig.py")
-PY = "/opt/anaconda3/envs/FireMan/bin/python"
+PY = paths.python_executable()
 
 tgt = pd.read_csv(paths.products_dir("prefire", "statewide_v0")
                   / "validation_targets.csv")

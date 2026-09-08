@@ -1,7 +1,8 @@
 #!/bin/zsh
 # Run one staging lane to completion (resumable driver, exit 42 = keep going).
 set -u
-PY=/opt/anaconda3/envs/FireMan/bin/python
+# Interpreter: set FIRESCAPE_PYTHON to your env's python, or activate it first.
+PY="${FIRESCAPE_PYTHON:-python3}"
 SP="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$1"
 export FIRESCAPE_STAGE_BUDGET=520

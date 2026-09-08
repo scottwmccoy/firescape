@@ -16,8 +16,8 @@ keywords = ["debris flow", "wildfire", "burn severity", "hazard assessment", "Ne
 # cannot resolve them from PyPI (see CLAUDE.md "Environment"):
 #   - pfdf       -> USGS registry only:
 #                   pip install pfdf -i https://code.usgs.gov/api/v4/groups/859/-/packages/pypi/simple
-#   - stormscape -> editable local install: pip install -e ~/git/code/stormscape
-#   - tracescape -> editable local install: pip install -e ~/git/code/tracescape
+#   - stormscape -> editable install of a sibling checkout: pip install -e path/to/stormscape
+#   - tracescape -> editable install of a sibling checkout: pip install -e path/to/tracescape
 #                   (exposure.py borrows its corridor width law; the imagery
 #                    change-detection workflow lives there, not here)
 dependencies = [

@@ -12,8 +12,7 @@ from firescape import paths
 
 TAG = "lf2016"
 BREAK = 281.0
-fires = pd.read_csv("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-                    "fire_sets/pilot_v1.csv").set_index("event_id")
+fires = pd.read_csv(paths.package_data("calibration", "fire_sets", "pilot_v1.csv")).set_index("event_id")
 
 rows = []
 for d in sorted(paths.interim_dir("calib").iterdir()):

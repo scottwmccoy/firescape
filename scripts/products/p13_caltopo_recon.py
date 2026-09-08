@@ -53,9 +53,7 @@ from stormscape import caltopo, export
 
 from firescape import paths
 
-STORM = Path("/Users/scottmccoy/Library/CloudStorage/Box-Box/SWMresearch/"
-             "PostFireDebrisFlows/2026_Bug_Stalion/storms/"
-             "composite_20260812-20260814")
+STORM = Path(paths.research_root() / "2026_Bug_Stalion" / "storms" / "composite_20260812-20260814")
 STORM_KEY = "BSE3day"
 STORM_WINDOW = "12-14 Aug 2026"
 OUT = paths.products_dir("caltopo", "bugstallion_recon_v1")

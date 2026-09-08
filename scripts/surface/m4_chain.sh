@@ -1,9 +1,11 @@
 #!/bin/zsh
 # Wait for the running M4 fleet, resume until every HU10 is done, then merge + map.
 set -u
-PY=/opt/anaconda3/envs/FireMan/bin/python
-SP="/private/tmp/claude-501/-Users-scottmccoy-Library-CloudStorage-Box-Box-SWMresearch-PostFireDebrisFlows-PreFireAssessment/7eafe9f9-5a07-4337-8ea7-7267ec1788f2/scratchpad"
-OUT="/Users/scottmccoy/Library/CloudStorage/Box-Box/SWMresearch/PostFireDebrisFlows/PreFireAssessment/products/prefire/pilot_v1"
+# Interpreter: set FIRESCAPE_PYTHON to your env's python, or activate it first.
+PY="${FIRESCAPE_PYTHON:-python3}"
+SP="$(cd "$(dirname "$0")" && pwd)"
+DATA="${FIRESCAPE_DATA:-$HOME/Library/CloudStorage/Box-Box/SWMresearch/PostFireDebrisFlows/PreFireAssessment}"
+OUT="$DATA/products/prefire/pilot_v1"
 cd "$SP" || exit 1
 
 count() { ls "$OUT" 2>/dev/null | grep -c 'meta.json'; }

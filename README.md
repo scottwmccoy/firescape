@@ -25,14 +25,33 @@ NBMG MyHAZARDS portal.
 
 ## Install (development)
 
-Use the `FireMan` conda env — see `CLAUDE.md` for the exact environment rules.
+Use a conda-forge Python 3.12 environment (the project's is called
+`FireMan`; see `CLAUDE.md` for the environment rules). With it activated:
 
 ```bash
-/opt/anaconda3/envs/FireMan/bin/python -m pip install -e ~/git/code/stormscape
-/opt/anaconda3/envs/FireMan/bin/python -m pip install -e ~/git/code/firescape
+python -m pip install -e path/to/stormscape        # sibling checkout, MIT
+python -m pip install -e path/to/firescape
 # pfdf comes from the USGS registry, NOT PyPI:
-/opt/anaconda3/envs/FireMan/bin/python -m pip install pfdf -i https://code.usgs.gov/api/v4/groups/859/-/packages/pypi/simple
+python -m pip install pfdf -i https://code.usgs.gov/api/v4/groups/859/-/packages/pypi/simple
 ```
+
+## Configuration
+
+Nothing in the code depends on where your checkout or home directory is.
+Everything machine-specific is an environment variable, and all have
+sensible defaults except the email:
+
+| variable | meaning | default |
+|---|---|---|
+| `FIRESCAPE_DATA` | the shared project data folder (`raw/`, `interim/`, `products/`, `figures/`) | the Box folder at Box Drive's standard location, `~/Library/CloudStorage/Box-Box/SWMresearch/PostFireDebrisFlows/PreFireAssessment` |
+| `FIRESCAPE_RESEARCH` | the folder above it, holding sibling per-fire / per-storm project folders a few scripts read | parent of `FIRESCAPE_DATA` |
+| `FIRESCAPE_CACHE` | local caches and download staging (never on Box) | `~/.cache/firescape` |
+| `FIRESCAPE_PYTHON` | interpreter the shell wrappers and batch drivers use | `python3` on `PATH` / the running interpreter |
+| `FIRESCAPE_EMAIL` | address LANDFIRE (LFPS) and MTBS notify when a job or bundle order is ready | **none — required** for staging and ordering |
+
+Files shipped inside the package (calibration TOMLs, fire sets, region
+GeoJSONs, the Staley 2018 tables) are located through
+`firescape.paths.package_data()`, so they work from any checkout or install.
 
 ## Quickstart (pilot AOI north of Reno)
 

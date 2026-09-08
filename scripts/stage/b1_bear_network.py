@@ -17,7 +17,7 @@ The DEM is fetched over the AOI plus a further ``DEM_PAD_M`` so that flow
 accumulation for edge segments is not truncated by the fetch footprint;
 the segment mask is still confined to the AOI.
 
-Run: /opt/anaconda3/envs/FireMan/bin/python scripts/stage/b1_bear_network.py
+Run: python scripts/stage/b1_bear_network.py
 """
 from __future__ import annotations
 
@@ -32,8 +32,9 @@ import rasterio
 
 from firescape.delineate import match_grid, network
 
-BOX = Path("/Users/scottmccoy/Library/CloudStorage/Box-Box/SWMresearch"
-           "/PostFireDebrisFlows/2024_BearFire")
+from firescape import paths
+
+BOX = Path(paths.research_root() / "2024_BearFire")
 OUT = BOX / "TraceScape_outputa"
 PERIM = BOX / "GIS/shp/Bear_Fire_2024_Perimeter.shp"
 BARC = BOX / ("GIS/CGS_BARC/bear_barc4_regbarc_90312570_s2a_20240902"

@@ -33,8 +33,7 @@ mapping, _ = severity.remap_crosswalk(gpd.read_file(EVT_DIR / "LF2016_EVT_pilot.
 TABLES = {"staley2018": severity.load_cdf_table(table="staley2018"),
           "nv_merged": severity.load_cdf_table(table="nv_merged")}
 
-fires = pd.read_csv("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-                    "fire_sets/pilot_v1.csv")
+fires = pd.read_csv(paths.package_data("calibration", "fire_sets", "pilot_v1.csv"))
 use = fires[fires["include"] & (fires["mod_t"] > 0) & (fires["mod_t"] < 2000)
             & (fires["ig_year"] >= MIN_YEAR)
             & (fires["event_id"] != "CA3959712021620240902")].copy()   # Bear: BAER

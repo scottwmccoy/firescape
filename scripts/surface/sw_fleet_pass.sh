@@ -1,7 +1,8 @@
 #!/bin/zsh
 # One time-budgeted statewide fleet pass: both lanes in parallel.
 set -u
-PY=/opt/anaconda3/envs/FireMan/bin/python
+# Interpreter: set FIRESCAPE_PYTHON to your env's python, or activate it first.
+PY="${FIRESCAPE_PYTHON:-python3}"
 SP="$(cd "$(dirname "$0")" && pwd)"
 export FIRESCAPE_M4_BUDGET=520 FIRESCAPE_NLANES=2
 

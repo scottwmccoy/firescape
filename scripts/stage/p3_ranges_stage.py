@@ -13,9 +13,7 @@ from scipy.signal import fftconvolve
 
 from firescape import paths
 
-SHP = ("/Users/scottmccoy/Library/CloudStorage/Box-Box/SWMresearch/"
-       "PostFireDebrisFlows/Volume_debrisFlows/NSHM2023_SeismicHazard/"
-       "US_PGA_2Pct50Yrs_BC_poly.shp")
+SHP = (paths.research_root() / "Volume_debrisFlows" / "NSHM2023_SeismicHazard" / "US_PGA_2Pct50Yrs_BC_poly.shp")
 RES = 1000.0
 RADIUS_M = 25_000.0
 

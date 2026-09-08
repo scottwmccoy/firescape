@@ -16,10 +16,9 @@ warnings.filterwarnings("ignore")
 import numpy as np
 import pandas as pd
 
-from firescape import mtbs
+from firescape import mtbs, paths
 
-SET = ("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-       "fire_sets/statewide_v1.csv")
+SET = (paths.package_data("calibration", "fire_sets", "statewide_v1.csv"))
 
 df = pd.read_csv(SET)
 if "threshold_scale" in df.columns and (df["threshold_scale"] == "barc256->dnbr").any():

@@ -19,7 +19,7 @@ BUDGET = float(os.environ.get("FIRESCAPE_CALIB_BUDGET", 480))
 ONLY = os.environ.get("FIRESCAPE_ONLY")
 
 fires = pd.read_csv(
-    "/Users/scottmccoy/git/code/firescape/firescape/data/calibration/fire_sets/pilot_v1.csv"
+    paths.package_data("calibration", "fire_sets", "pilot_v1.csv")
 )
 usable = fires[fires["include"] & (fires["mod_t"] > 0) & (fires["mod_t"] < 2000)].copy()
 usable = usable[usable["event_id"] != "CA3959712021620240902"]  # Bear: BAER SBS thresholds, not MTBS

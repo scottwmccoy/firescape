@@ -7,8 +7,7 @@ import pandas as pd
 from firescape import landfire, mtbs, paths
 
 EMAIL = landfire.delivery_email()      # $FIRESCAPE_EMAIL; no default on purpose
-SET = ("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-       "fire_sets/statewide_v1.csv")
+SET = (paths.package_data("calibration", "fire_sets", "statewide_v1.csv"))
 
 df = pd.read_csv(SET)
 need = sorted(df.loc[df["include"] & ~df["have_bundle"], "event_id"])

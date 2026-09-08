@@ -32,8 +32,7 @@ eco = gpd.read_file("zip://" + str(paths.raw_dir("boundaries") / "us_eco_l3.zip"
 eco = eco.to_crs("EPSG:5070")
 hu = gpd.read_file(paths.interim_dir("statewide") / "nv_hu10.geojson").to_crs("EPSG:5070")
 fires = gpd.read_file(paths.interim_dir("statewide") / "calib_fires_v1.geojson").to_crs("EPSG:5070")
-fire_set = pd.read_csv("/Users/scottmccoy/git/code/firescape/firescape/data/"
-                       "calibration/fire_sets/statewide_v1.csv")
+fire_set = pd.read_csv(paths.package_data("calibration", "fire_sets", "statewide_v1.csv"))
 
 # ecoregions present in the domain
 dom = hu.union_all().convex_hull
@@ -96,8 +95,7 @@ for r in sorted(eco["region"]):
 
 # outputs
 eco44 = eco.to_crs("EPSG:4326")
-repo = ("/Users/scottmccoy/git/code/firescape/firescape/data/regions/"
-        "nv_prefire_regions.geojson")
+repo = (paths.package_data("regions", "nv_prefire_regions.geojson"))
 eco44.to_file(repo, driver="GeoJSON")
 hu_out = hu[["huc10", "region"]].copy()
 hu_out["huc10"] = hu_out["huc10"].astype(str)
@@ -105,7 +103,6 @@ hu_out.to_csv(paths.interim_dir("statewide") / "hu10_regions.csv", index=False)
 fs = fire_set.merge(
     fires[["event_id", "region"]].drop_duplicates("event_id"), on="event_id",
     how="left")
-fs.to_csv("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
-          "fire_sets/statewide_v1.csv", index=False)
+fs.to_csv(paths.package_data("calibration", "fire_sets", "statewide_v1.csv"), index=False)
 print(f"\nwrote {repo}")
 print("wrote hu10_regions.csv; statewide_v1.csv now carries a region column")

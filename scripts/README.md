@@ -9,7 +9,7 @@ carry hard-coded run parameters, they assume the Box data tree is present
 Run them with the project environment:
 
 ```bash
-/opt/anaconda3/envs/FireMan/bin/python scripts/<group>/<script>.py
+python scripts/<group>/<script>.py        # with the project env active; see README "Configuration"
 ```
 
 Filename prefixes are historical run phases: `m3`–`m5` = pilot milestones,

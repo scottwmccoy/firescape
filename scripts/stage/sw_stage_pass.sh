@@ -2,7 +2,8 @@
 # One time-budgeted pass over all three staging lanes, in parallel.
 # Exit 42 if any lane still has pending work (relaunch me), 0 when all done.
 set -u
-PY=/opt/anaconda3/envs/FireMan/bin/python
+# Interpreter: set FIRESCAPE_PYTHON to your env's python, or activate it first.
+PY="${FIRESCAPE_PYTHON:-python3}"
 SP="$(cd "$(dirname "$0")" && pwd)"
 export FIRESCAPE_STAGE_BUDGET=470
 # Delivery address for LFPS/MTBS notices: set FIRESCAPE_EMAIL in your own
