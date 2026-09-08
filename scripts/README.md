@@ -3,59 +3,74 @@
 These are the drivers that actually produced the pilot and statewide products,
 kept for reproducibility and provenance. They are **not** library code: they
 carry hard-coded run parameters, they assume the Box data tree is present
-(`FIRESCAPE_DATA`), and several are long-running. Reusable logic belongs in the
-`firescape` package; if something here starts getting imported, promote it.
+(`FIRESCAPE_DATA`, see the top-level README "Configuration"), and several are
+long-running. Reusable logic belongs in the `firescape` package; if something
+here starts getting imported, promote it.
 
-Run them with the project environment:
+Run them with the project environment active:
 
 ```bash
-python scripts/<group>/<script>.py        # with the project env active; see README "Configuration"
+python scripts/<group>/<script>.py
 ```
 
+The `firescape` CLI is a thin launcher for the most-used ones (`prefire`,
+`storm`, `assess`, `map`, `hindcast`, `calibrate`, `annualprob`, `severity`);
+`--dry-run` prints the script it would run.
+
 Filename prefixes are historical run phases: `m3`–`m5` = pilot milestones,
-`p2`–`p5` = statewide phases 2–5, `sw` = statewide fleet, `cdf` = severity
-CDF refit.
+`p2`–`p16` = statewide phases and studies in order, `sw` = statewide fleet,
+`cdf` = severity CDF refit, `e` = exposure, `b` = per-fire staging.
 
 ## Conventions worth knowing
 
 - **Resumable drivers** (`*_driver.py`) are time-budgeted and exit **42** when
   the budget is hit, meaning "more work remains, run me again". The `*.sh`
-  wrappers loop on that until a pass exits 0.
+  wrappers loop on that until a pass exits 0. Budgets are env vars
+  (`FIRESCAPE_CAL_BUDGET`, `FIRESCAPE_M4_BUDGET`, `FIRESCAPE_STAGE_BUDGET`).
 - **Per-fire and per-unit caches** live in `interim/`; drivers skip finished
-  work on restart, so re-running is cheap and safe.
+  work on restart, so re-running is cheap and safe. A calibration fire's class
+  decomposition (`decomp.npz`) makes any later re-solve at a new break or CDF
+  table a two-second job.
 - **Calibration outputs are TOML files** committed to
-  `firescape/data/calibration/`, never numbers pasted into code.
+  `firescape/data/calibration/`, never numbers pasted into code. The current
+  one is `statewide_v1_4`; the shipped statewide surface is
+  `products/prefire/statewide_v1_2` (a nine-unit test showed v1_4 does not
+  visibly change it — `surface/sw_sierra_v14_*`).
+- **Versioned scripts are kept, not overwritten**: `sw_driver_v12.py` is the
+  current fleet driver and `sw_driver.py` / `_v1` / `_v11` are the runs that
+  produced the earlier products.
 
 ## stage/ — acquisition and staging
 
 | script | what it does |
 |---|---|
-| `sw_inventory.py` | NV boundary + the 591 HU10 units, the statewide work list |
+| `sw_inventory.py` | NV boundary + the HU10 units, the statewide work list; `p11_add_tahoe_units.py` closes the Tahoe / Truckee basin across the state line |
 | `sw_stage_dem.py` | 3DEP 1/3-arcsecond tiles from USGS S3 (resumable) |
-| `sw_stage_evt.py` | LANDFIRE EVT over all units via LFPS 2-degree chunks |
+| `sw_stage_evt.py` | LANDFIRE EVT over all units via LFPS 2-degree chunks (needs `FIRESCAPE_EMAIL`) |
 | `sw_stage_soils.py` | statewide KF: STATSGO if ScienceBase answers, else SSURGO |
 | `sw_atlas14.py`, `sw_atlas14_fill.py` | Atlas 14 grids; mosaics the `sw`/`inw`/`ca` regions across the seam |
-| `p2_fireset.py` | era-matched statewide calibration fire set (EVT vintage ≤ ignition year − 1) |
-| `p2_order.py` | places the MTBS bundle order for fires not already downloaded |
+| `p2_fireset.py` | era-matched statewide calibration fire set (EVT vintage ≤ ignition year − 1); converts BARC256-scale thresholds |
+| `p2b_fireset_barc_scale.py` | one-off patch of the staged fire set for the BARC256 threshold scale (adds `map_prog`, `asmnt_type`, `threshold_scale`) |
+| `p2_order.py` | places the MTBS bundle order for fires not already downloaded (needs `FIRESCAPE_EMAIL`) |
 | `p2_stage.py` | era-matched EVT under each calibration fire + DEM gap fill |
 | `p2_regions.py` | the four NV prefire regions, folded from EPA Level III ecoregions |
 | `p3_ranges_stage.py` | NSHM-2023 PGA predictor for the RANGES volume model |
-| `e1_stage_usmin.py` | USMIN mine features for NV (waste + openings) → `raw/usmin/nv_mines.gpkg`; the waste polygons are the AML exposure assets |
-| `e1b_stage_blm.py` | BLM SMA holdings for NV (14 dissolved polys, 66% of the state, ~30 m simplification) → `raw/blm/nv_blm_sma.gpkg` |
-| `e1c_stage_nhd_receptors.py` | NHD receptor waters near the AML sites (perennial or GNIS-named, server-side filter; per-cell cache, threaded) → `interim/exposure/nhd_receptors.gpkg` |
-| `sw_stage_chain.sh`, `sw_stage_pass.sh` | chain/relaunch wrappers for the above |
+| `p7_stage_burnprob.py` | annual burn probability P(F), Wildfire Risk to Communities 2nd ed. |
+| `e1_stage_usmin.py`, `e1b_stage_blm.py`, `e1c_stage_nhd_receptors.py` | USMIN mine features (waste + openings), BLM surface-management polygons, NHD receptor waters — the exposure inputs |
+| `b1_bear_network.py` | Bear Fire (2024) channel network for tracescape |
+| `sw_stage_chain.sh`, `sw_stage_pass.sh` | chain / relaunch wrappers for the staging lanes |
 
 ## calibrate/ — severity CDFs and P_dsim
 
 | script | what it does |
 |---|---|
-| `cdf_refit.py` | Nevada EVT–dNBR Weibull refit, era-matched → `CDFParameters_NV_{refit,merged}` |
-| `cdf_eval.py` | does the refit beat Staley 2018? (per-class medians, weighted MAE) |
-| `cdf_holdout.py` | leave-one-fire-out: refit without Loyalton, then predict it |
-| `m3_driver.py` / `m3_summary.py` | pilot P_dsim calibration → `pilot_v1.toml` |
-| `m3b_driver.py` / `m3b_summary.py` | recalibration against `nv_merged` → `pilot_v2.toml` |
+| `cdf_refit.py`, `cdf_eval.py`, `cdf_holdout.py` | Nevada EVT–dNBR Weibull refit, era-matched; does it beat Staley 2018; leave-Loyalton-out test |
+| `p6_cdf_refit_statewide.py`, `p6_cdf_eval_statewide.py` | the statewide refit (`nv_statewide` table) and its held-out evaluation |
+| `m3_driver.py` / `m3_summary.py`, `m3b_*` | pilot P_dsim calibration → `pilot_v1.toml`, recalibration on `nv_merged` → `pilot_v2.toml` |
 | `p2_calib_driver.py` / `p2_calib_summary.py` | statewide per-region calibration → `statewide_v1.toml` |
-| `p4_calib_driver.py` / `p4_calib_summary.py` | recalibration under dispersed severity (σ_z = 0.91) → `statewide_v1_1.toml` |
+| `p4_calib_driver.py` / `p4_calib_summary.py` | dispersed severity (σ_z = 0.91) → `statewide_v1_1.toml` |
+| `p7_calib_driver.py` / `p7_calib_summary.py` | on the statewide CDF refit → `statewide_v1_2.toml`; v1_3 was re-solved from the same caches with the 9999 sentinel guarded |
+| `p8_calib_driver.py` / `p8_calib_summary.py` | **current**: BARC256-corrected thresholds, no-`dnbr6` fires observed at analyst thresholds → `statewide_v1_4.toml` |
 
 ## surface/ — hazard surfaces and merges
 
@@ -64,24 +79,63 @@ CDF refit.
 | `m4_driver.py`, `m4v2_driver.py`, `m5_merge.py`, `m5v2_merge.py`, `m4_chain.sh` | pilot AOI surface, HU10 at a time, plus P(R>T) |
 | `sw_driver.py`, `sw_merge.py`, `sw_fleet_pass.sh` | statewide **v0** (pilot calibration applied statewide) |
 | `sw_driver_v1.py`, `sw_merge_v1.py`, `sw_fleet_v1.sh` | statewide **v1** (per-region calibration) |
-| `sw_driver_v11.py`, `sw_merge_v11.py`, `sw_fleet_v11.sh` | statewide **v1.1** (dispersed severity + RANGES volume) — the current product |
-| `p3_ranges_apply.py`, `p3_ranges_final.py` | per-basin RANGES predictors (mean slope, north-facing fraction) and the volume columns |
+| `sw_driver_v11.py`, `sw_merge_v11.py`, `sw_fleet_v11.sh` | statewide **v1.1** (dispersed severity + RANGES volume) |
+| `sw_driver_v12.py`, `sw_merge_v12.py`, `sw_fleet_v12.sh`, `run_v12_overnight.sh` | statewide **v1.2** — the shipped product; the overnight script chains calibration → fleet → merge → annual probability → maps |
+| `p3_ranges_apply.py`, `p3_ranges_final.py`, `sw_ranges_segments.py`, `sw_repair_ranges.py` | per-basin RANGES predictors and volume columns, on basins and on the per-unit segment files |
+| `p7_annual_probability.py` | P(F) × P(R>T) for a merged surface (`firescape annualprob <version>`) |
+| `sw_sierra_v14_test.py`, `sw_sierra_v14_compare.py` | re-run the nine Sierra units under v1_4 and diff them against the shipped surface |
 
 ## analysis/ — the studies behind the model choices
 
 | script | what it does |
 |---|---|
-| `p3_sigma.py` | measures within-fire severity quantile dispersion → **σ_z = 0.91**, now `severity.SIGMA_Z_DEFAULT` |
-| `p3_dist_experiment.py` | deterministic vs dispersed severity × Gartner vs RANGES volume, 12 units |
-| `p2_ml_probe.py` | leave-one-fire-out probe: does conditioning beyond EVT class help? (feeds `docs/ml_severity_assessment.md`) |
-| `p2_severity_mosaic.py` | statewide simulated-severity intermediates — the layer that exposed the EVT seam bug |
+| `p3_sigma.py`, `p3_dist_experiment.py` | within-fire severity quantile dispersion → **σ_z = 0.91**; deterministic vs dispersed severity × Gartner vs RANGES on 12 units |
+| `p2_ml_probe.py` | leave-one-fire-out probe: does conditioning beyond EVT class help? (`docs/ml_severity_assessment.md`) |
+| `p2_severity_mosaic.py` | statewide simulated-severity intermediates, mapped (`firescape severity`) |
+| `p6_prt_decomposition.py` | why P(R>T) rises toward southeast Nevada |
+| `p7_baer_comparison.py`, `p8_baer_comparison_ca.py` | the calibrated break against field-verified BAER soil burn severity — 19 Nevada fires, 112 California fires on Rossi's breaks |
+| `p9_baer_outlier_diagnostics.py` | why the BAER-implied break scatters: dNBR level, assessment timing, imagery cadence |
+| `p10_break_experiment.py` | an assessment-type-aware break, tested leave-one-fire-out on cached joint histograms |
+| `p11_baer_patchiness.py`, `p11_baer_fireweather.py`, `p11_baer_sign_model.py` | can patchiness, perimeter shape or gridMET fire weather predict which way a fire misses BAER (no) |
+
+## products/
+
+| script | what it does |
+|---|---|
+| `p8_fire_forecast.py` | pre-fire forecast for a named WFIGS fire on simulated severity (`firescape prefire`) |
+| `p8_fire_storm_response.py` | which segments a measured storm should have triggered (`firescape storm`) |
+| `p9_fire_observed.py` | the same fire on OBSERVED severity from CIMSS BRISK, injected — no MTBS bundle, assessable while burning (`firescape assess`) |
+| `p16_mtbs_fire_hindcast.py` | post-fire hazard hindcast on MTBS severity, against the observed debris-flow inventory (`firescape hindcast`) |
+| `p2_hindcast_batch.py`, `p2_hindcast_fig.py` | observed-severity hindcasts + figures for a list of MTBS fires (the batch invokes the figure script **by path** — keep them together) |
+| `p13_caltopo_recon.py` | field reconnaissance package for CalTopo (Bug + Stallion) |
+| `p5_inventory_pack.py` | manual-survey package: the segment network as regionated KMZ tiles by HU8, hot-segment layer, priority sheet |
+| `e2_aml_exposure.py`, `e5_perry_canyon.py`, `e7_openings_exposure.py` | AML waste-site exposure against the statewide network (`firescape.exposure`), the Perry Canyon pilot, and the statewide openings variant |
+
+### The active-fire pipeline
+
+Every stage takes a **fire name** and a calibration version, so any WFIGS fire
+runs through unchanged — Stallion, Bug and Hawk were all done this way. The
+CLI wraps it:
+
+```bash
+firescape prefire Bug                 # = python scripts/products/p8_fire_forecast.py       Bug statewide_v1_4
+firescape storm   Bug                 # = python scripts/products/p8_fire_storm_response.py Bug statewide_v1_4
+firescape assess  Bug                 # = python scripts/products/p9_fire_observed.py       Bug statewide_v1_4
+firescape map     Bug --sheet all     # = figures/p15_fire_postfire_hazard.py (+ --prefire), figures/p8_fire_storm_map.py
+```
 
 ## figures/
 
-`sw_maps*.py` (statewide hazard, one per version), `p2_severity_maps.py`,
-`p2_class_plots.py` (severity by vegetation class), `p2_fires_overlay.py`
-(historic MTBS perimeters over the hazard map), `p3_experiment_fig.py`,
-`m4_maps.py` / `m4v2_maps.py` / `v1v2_maps.py` (pilot).
+| script | what it does |
+|---|---|
+| `p15_fire_postfire_hazard.py` | **the fire sheet**: observed severity, likelihood at the design storm, triggering intensity — the emergency-assessment form the USGS publishes; `--prefire` draws it on simulated severity |
+| `p8_fire_forecast_map.py`, `p8_fire_storm_map.py`, `p9_fire_observed_map.py` | the earlier fire sheets: forecast, storm response, observed severity under the measured storm (superseded by p15 for hazard; kept for the storm map) |
+| `p16_debrisflow_inventory_statewide.py` | the statewide surface with the observed debris-flow inventory on top |
+| `sw_maps*.py`, `p2_severity_maps.py`, `p2_class_plots.py`, `p2_fires_overlay.py`, `p3_experiment_fig.py`, `p7_annual_probability_map.py` | statewide hazard (one per version), simulated severity, severity by vegetation class, historic perimeters over the hazard map, the dispersion experiment, annual probability |
+| `p9_baer_case_panels.py`, `p9_baer_timing_plot.py`, `p10_break_response.py`, `p10_imagery_cadence.py` | the BAER comparison figures: side-by-side classified maps, timing, the break-response curves, MTBS image cadence |
+| `p14_zoom_volume.py` | zoom volume sheets |
+| `e3_aml_map.py`, `e4_aml_zooms.py`, `e6_perry_canyon.py`, `e8_aml_compilation.py` | the exposure maps |
+| `m4_maps.py`, `m4v2_maps.py`, `v1v2_maps.py` | pilot |
 
 ### Regional zooms
 
@@ -132,15 +186,15 @@ Two costs worth knowing before adding a window:
   sheet says so in its own title rather than only in the summary JSON.
 
 All of them draw through `firescape.plotting` (house style) and
-`firescape.relief` (hillshade); see those modules before changing how a figure
-looks, and the repo CLAUDE.md for the DEM-resampling traps. `plotting.save`
-writes **PDF only** — pass `formats=("png", "pdf")` if something downstream
-needs a raster.
+`stormscape.relief` (hillshade); see those modules before changing how a
+figure looks, and the repo CLAUDE.md for the DEM-resampling traps.
+`plotting.save` writes **PDF only** — pass `formats=("png", "pdf")` if
+something downstream needs a raster.
 
 Three rules a zoomed sheet has to keep, each one learned by breaking it:
 
 * **Take the hillshade from `plotting.hillshade`, never `relief.shaded_relief`
-  directly.** It sizes the shading resolution to the window — relief.py rule 3
+  directly.** It sizes the shading resolution to the window — relief rule 3
   is *shade finer than the display grid*, and a panel shaded at the statewide
   50 m under a 15 m grid arrives pre-blurred — and it keys its cache on the
   grid origin, so two windows of one shape cannot swap terrain.
@@ -153,58 +207,11 @@ Three rules a zoomed sheet has to keep, each one learned by breaking it:
   no visible difference — each segment is a couple of pixels at print scale.
   Text, markers and leaders stay vector.
 
-## verify/ — Planet-imagery event verification (design: docs/planet_verification_design.md)
+## Not here any more
 
-The stack–z–segment chain: epoch medians of PlanetScope SR → robust z →
-corridor-integrated per-segment response classes (Dolan-inventory coding:
-0 none / 1 fluvial / 3 debris flow), plus fan-deposit objects beyond the
-network. Library half lives in `firescape/{planetscope,epochs,change,
-corridor,fans}.py`; these drivers are the as-run event analyses.
-
-| script | what it does |
-|---|---|
-| `p13_hidden_valley_event.py` | Hidden Valley 2026-06-19: epoch z maps + chips at the two reported fan sites (first real detection) |
-| `p14_hv_corridor.py` | per-segment response map over the pfdf network (1,412 segments: 927/324/161 at provisional thresholds) |
-| `p15_dolan_comparison.py` | score corridor z against the Cavagnaro/McCoy Dolan inventory (AUC separability, prevalence-matched thresholds, confusion, side-by-side maps) |
-| `p16_hv_fans.py` | fan-stage v0: HAND-lite fan zone + compact change objects (both reported HV fans recovered at 0.3 m / 8.3 m) |
-
-Costs worth knowing: Planet orders take ~15–60 min to process (poll the
-ORDER, never a log); the ~30-day CSDA embargo delays post-storm imagery a
-month; epoch builds on big windows need the lite options
-(`epochs.build(..., indices=..., rgb=False, keep_nir=False,
-dtype=np.float16)`) — the Dolan grid is ~36M px × 30 frames.
-
-## products/
-
-| script | what it does |
-|---|---|
-|  `p5_inventory_pack.py` | builds the manual-survey package: 4.24 M-segment GPKG, regionated KMZ tiles by HU8, hot-segment layer, priority sheet |
-| `p2_hindcast_batch.py`, `p2_hindcast_fig.py` | observed-severity hindcasts for historic fires (M6 validation). The batch script invokes the figure script **by path** — keep them in the same directory |
-| `e7_openings_exposure.py` | statewide exposure for the 32,582 adits + shafts (portal-dump proxies; dedupes quad overlaps) → `products/exposure/openings_v1/`; compilation map = `figures/e8_aml_compilation.py` |
-| `e5_perry_canyon.py` | Perry Canyon pilot: adits + shafts as portal-dump proxies where USMIN maps no waste extent (dedupes overlapping quad records) → `products/exposure/perry_canyon_v1/`; sheet = `figures/e6_perry_canyon.py` |
-| `e2_aml_exposure.py` | AML waste sites vs the v1.2 network (`firescape.exposure`: near-channel test → site annual rates → named NHD receptor → BLM flag) → ranked `products/exposure/aml_v2/`. Maps: `figures/e3_aml_map.py` (statewide) then `figures/e4_aml_zooms.py` (eleven district zooms — six ranked on waste, five on openings, windows clustered from the rankings — same statewide-then-zoom pattern as `sw_maps_v12` → `p10`/`p12`) |
-
-### Active-fire pipeline (`p8_*`, `p9_*`)
-
-Every stage takes a **fire name** and a calibration version, so any WFIGS fire
-runs through unchanged — Stallion and Bug were both done this way:
-
-```bash
-python scripts/products/p8_fire_forecast.py       Bug statewide_v1_1  # pre-fire, simulated severity
-python scripts/products/p8_fire_storm_response.py Bug statewide_v1_1  # score vs observed MRMS rainfall
-python scripts/products/p9_fire_observed.py       Bug statewide_v1_1  # re-assess on BRISK measured severity
-python scripts/figures/p8_fire_forecast_map.py    Bug statewide_v1_1
-python scripts/figures/p8_fire_storm_map.py       Bug statewide_v1_1
-python scripts/figures/p9_fire_observed_map.py    Bug statewide_v1_1
-```
-
-`p9_fire_observed.py` needs no MTBS bundle: it pulls near-real-time dNBR through
-`stormscape.burn` (CIMSS BRISK) and passes it to `assess.run_observed` via its
-`perimeter=` / `dnbr=` injection, so a fire can be assessed while still burning.
-
-## Deliberately not kept
-
-Superseded one-off diagnostics: the hillshade method comparison (now
-`tests/test_relief.py`), the EVT seam blast-radius probe (now
-`tests/test_statewide.py`), and two provisional KF fill scripts (superseded by
-`soils.kf_raster`).
+The Planet-imagery event verification stack (`planetscope`, `epochs`,
+`change`, `corridor`, `fans` and the `verify/` drivers) was carved out to the
+sibling **tracescape** repo on 2026-08-19; firescape imports one function from
+it (`tracescape.corridor.corridor_width_m`, for `exposure`). Superseded one-off
+diagnostics were folded into tests (`test_relief` in stormscape,
+`test_statewide` here) or replaced by library code (`soils.kf_raster`).

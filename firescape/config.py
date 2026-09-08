@@ -14,6 +14,11 @@ from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 
+#: The adopted statewide calibration -- what the CLI, the active-fire scripts
+#: and new products use unless told otherwise. Bump it when a new TOML is
+#: adopted (each one's header says what changed and what it supersedes).
+CURRENT_CALIBRATION = "statewide_v1_4"
+
 #: USGS-standard reference storm (~1-yr RI 15-min intensity; Staley et al. 2020).
 I15_REFERENCE_MMH = 24.0
 
