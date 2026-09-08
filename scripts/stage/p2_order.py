@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from firescape import mtbs, paths
+from firescape import landfire, mtbs, paths
 
-EMAIL = "scottmccoy@unr.edu"
+EMAIL = landfire.delivery_email()      # $FIRESCAPE_EMAIL; no default on purpose
 SET = ("/Users/scottmccoy/git/code/firescape/firescape/data/calibration/"
        "fire_sets/statewide_v1.csv")
 

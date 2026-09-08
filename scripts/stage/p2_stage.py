@@ -95,7 +95,7 @@ for vintage in VINTAGES:
         t1 = time.time()
         try:
             lf.download(vintage, BoundingBox(x, y, x + 2, y + 2, crs=4326),
-                        os.environ["FIRESCAPE_LFPS_EMAIL"], parent=OUT,
+                        landfire.delivery_email(), parent=OUT,
                         name=name, max_job_time=900)
             print(f"{vintage}/{name}: ok in {time.time()-t1:.0f}s", flush=True)
         except Exception as e:

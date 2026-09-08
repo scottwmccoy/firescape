@@ -18,14 +18,27 @@ from __future__ import annotations
 import os
 
 
-def _email(email: str | None) -> str:
-    email = email or os.environ.get("FIRESCAPE_LFPS_EMAIL")
+EMAIL_ENV = ("FIRESCAPE_LFPS_EMAIL", "FIRESCAPE_EMAIL")
+
+
+def delivery_email(email: str | None = None) -> str:
+    """The address external services deliver to (LFPS job notices, MTBS
+    bundle links). Explicit argument, else ``$FIRESCAPE_LFPS_EMAIL``, else
+    ``$FIRESCAPE_EMAIL``. There is deliberately no default: an address baked
+    into the repo means every collaborator places orders under one person's
+    inbox.
+    """
+    email = email or next((os.environ[k] for k in EMAIL_ENV if os.environ.get(k)), None)
     if not email:
         raise ValueError(
-            "LFPS requires an email (usage tracking). Pass email= or set "
-            "$FIRESCAPE_LFPS_EMAIL."
+            "No delivery email configured. Pass email= or set $FIRESCAPE_EMAIL "
+            "(or $FIRESCAPE_LFPS_EMAIL) to the address the service should notify."
         )
     return email
+
+
+def _email(email: str | None) -> str:
+    return delivery_email(email)
 
 
 def evt(bounds, layer: str, *, email: str | None = None,

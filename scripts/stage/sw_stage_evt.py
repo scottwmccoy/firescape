@@ -42,7 +42,7 @@ for x, y in chunks:
     t1 = time.time()
     try:
         lf.download("LF2025_EVT", BoundingBox(x, y, x + 2, y + 2, crs=4326),
-                    os.environ["FIRESCAPE_LFPS_EMAIL"], parent=OUT, name=name,
+                    landfire.delivery_email(), parent=OUT, name=name,
                     max_job_time=900)
         print(f"{name}: ok in {time.time()-t1:.0f}s", flush=True)
         done.append(name)

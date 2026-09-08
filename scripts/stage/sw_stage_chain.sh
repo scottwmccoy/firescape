@@ -5,7 +5,12 @@ PY=/opt/anaconda3/envs/FireMan/bin/python
 SP="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$1"
 export FIRESCAPE_STAGE_BUDGET=520
-export FIRESCAPE_LFPS_EMAIL=scottmccoy@unr.edu
+# Delivery address for LFPS/MTBS notices: set FIRESCAPE_EMAIL in your own
+# environment before running; there is no default.
+if [ -z "${FIRESCAPE_EMAIL:-}" ] && [ -z "${FIRESCAPE_LFPS_EMAIL:-}" ]; then
+  echo "set FIRESCAPE_EMAIL (or FIRESCAPE_LFPS_EMAIL) to your address first" >&2
+  exit 2
+fi
 for attempt in $(seq 1 40); do
   $PY "$SP/$SCRIPT"
   rc=$?

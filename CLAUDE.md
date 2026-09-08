@@ -14,6 +14,9 @@ Pre-fire PFDF hazard tool for Nevada (USGS LHP award, Task 2/Deliverable 2, due
 - `pfdf` is NOT on PyPI. Install/upgrade only from the USGS registry:
   `pip install pfdf -i https://code.usgs.gov/api/v4/groups/859/-/packages/pypi/simple`
   (PyPI packages named `pfdf`/`wildcat` are unrelated third-party projects.)
+- LFPS jobs and MTBS bundle orders need an address to notify: `export
+  FIRESCAPE_EMAIL=you@example.edu` (the older `FIRESCAPE_LFPS_EMAIL` is still
+  honored). Resolved by `landfire.delivery_email()`; there is **no default**.
 - `stormscape` is an editable local install from `~/git/code/stormscape`.
 - `tracescape` is an editable local install from `~/git/code/tracescape`
   (`exposure.py` borrows its corridor width law).
